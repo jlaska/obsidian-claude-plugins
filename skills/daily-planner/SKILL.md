@@ -12,9 +12,10 @@ Automates daily planning by fetching Google Calendar events and creating/updatin
 
 Invoke `/daily-planner` at the start of your day to:
 - Create today's daily note (if it doesn't exist)
-- Create meeting note files for each calendar event
+- Interactively select which meetings warrant full documentation
+- Create meeting note files for selected calendar events
 - Enrich meeting files with Google Meet links, descriptions, and document attachments
-- Link all meetings from the daily note
+- Link meetings and artifacts from the daily note
 
 ## Workflow
 
@@ -32,7 +33,32 @@ Use the `obsidian-vault-discovery` skill to determine:
 gog calendar events --today --json
 ```
 
-### 3. Determine File Paths
+### 3. Filter and Select Meetings
+
+Not all calendar events warrant full meeting documents. Apply filtering heuristics and user confirmation:
+
+**Auto-filter candidates** (suggest skipping):
+- **Attendance Status**: Meetings you declined or marked tentative
+- **Broadcast Events**: Titles containing "Week", "Office Hours", "All Hands", "Town Hall"
+- **Personal Time Slots**: Titles containing "Prep", "Lunch", "Focus Time", "Do Not Schedule", "OOO"
+- **Large Group Events**: >15 attendees (likely broadcast/informational)
+
+**Interactive Selection**:
+Use `AskUserQuestion` to present filtered calendar events and let the user select which meetings to create documents for.
+
+For each meeting, show:
+- **Meeting title**
+- **Time and duration**
+- **Attendee count**
+- **Attendance status** (accepted, tentative, declined)
+- **Has artifacts** (agenda doc, Gemini transcript available)
+
+**Three-tier handling**:
+1. **Full document**: Create meeting file with all metadata and link from daily note
+2. **Artifact links only**: Add just the artifact links (agenda, transcript, recording) to daily note's "Meeting Resources" section
+3. **Skip entirely**: Don't reference in daily note
+
+### 4. Determine File Paths
 
 Use the `obsidian_date_formatter.py` script to generate correct paths based on Obsidian's date format configuration:
 
@@ -61,14 +87,14 @@ This script:
 **Daily note**: Path structure determined by `.obsidian/daily-notes.json` format configuration
 **Meeting files**: Path structure determined by CLAUDE.md conventions and date format
 
-### 4. Match Attendees to People Files
+### 5. Match Attendees to People Files
 
 For each calendar attendee:
 1. Search `{people.folder}/` directory for matching files
 2. Match by email (from frontmatter) or name (from filename)
 3. Create quoted wikilinks: `"[[First Last]]"`
 
-### 5. Create/Update Meeting Files
+### 6. Create/Update Meeting Files
 
 For each calendar event, create meeting file with:
 
@@ -91,14 +117,28 @@ agenda: <google doc URL if attachment exists>
 - `## Agenda` - Calendar event description (if any)
 - `## Recent Meetings` - Base query block (from template)
 
-### 6. Update Daily Note
+### 7. Update Daily Note
 
-Add/update `# 📅 Meetings` section with wikilinks:
+Add/update sections in the daily note:
+
+**Full meeting documents** - `# 📅 Meetings` section with wikilinks:
 ```markdown
 # 📅 Meetings
 
 - [[YYYY-MM-DD - Meeting Title 1]]
 - [[YYYY-MM-DD - Meeting Title 2]]
+```
+
+**Artifact-only links** - `## Meeting Resources` section:
+```markdown
+## Meeting Resources
+
+### OpenShift Week 2026 | Day 3
+- [Agenda](https://docs.google.com/document/d/...)
+- [Gemini Summary](https://meet.google.com/...)
+
+### Atlassian Cloud Office Hours: UAT
+- [Recording](https://drive.google.com/file/d/...)
 ```
 
 ## Calendar Event Field Mapping
@@ -107,6 +147,7 @@ Add/update `# 📅 Meetings` section with wikilinks:
 |---------------|-------------------|-------|
 | `summary` | File name | Sanitized for filesystem |
 | `attendees[].email` | `attendees` | Matched to PEOPLE/ files |
+| `attendees[].responseStatus` | - | Used for filtering (accepted/declined/tentative/needsAction) |
 | `hangoutLink` | `gmeet` | Google Meet URL |
 | `description` | `## Agenda` content | Raw text from event |
 | `attachments[].fileUrl` | `agenda`, `minutes`, `recording`, `transcript` | Based on title/type heuristics |
@@ -130,6 +171,44 @@ Google Meet artifacts:
 - Replace `/`, `:`, `|` with ` - ` or remove
 - Trim whitespace
 - Example: "James : Deepika 1:1" → "James Deepika 1-1"
+
+## Meeting Filtering Logic
+
+### Skip Criteria (Auto-suggest)
+
+**Attendance Status**:
+- `responseStatus: "declined"` - You declined the meeting
+- `responseStatus: "needsAction"` - You haven't responded (treat as tentative)
+- `responseStatus: "tentative"` - You're tentative
+
+**Broadcast Event Keywords** (in title):
+- "Week", "Office Hours", "All Hands", "Town Hall", "Webinar", "Training"
+- Events with >15 attendees
+
+**Personal Time Keywords** (in title):
+- "Prep", "Lunch", "Break", "Focus Time", "Focus Block"
+- "Do Not Schedule", "DNS", "OOO", "Out of Office"
+- "Personal", "Appointment", "Hold"
+
+### AskUserQuestion Format
+
+Present meetings grouped by recommendation:
+
+**Recommended to document** (accepted, <8 attendees, has artifacts):
+- James : Deepika 1:1 (10:00-10:30, 2 attendees) ✓ Accepted, Has agenda
+
+**Consider skipping** (broadcast events, large groups):
+- OpenShift Week 2026 | Day 3 (10:00-11:00, 50+ attendees) - Broadcast event
+- Atlassian Cloud Office Hours (14:00-14:30, 20 attendees) - Office hours
+
+**Definitely skip** (declined, personal time):
+- Managed Regional Platform sync (10:30-11:00) ✗ Declined
+- Prep Lunch (12:00-12:25) - Personal time
+
+User selects from three options per meeting:
+1. **Create document** - Full meeting file with metadata
+2. **Link artifacts only** - Add to Meeting Resources section if artifacts exist
+3. **Skip** - Don't reference in daily note
 
 ## Directory Structure
 

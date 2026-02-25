@@ -14,7 +14,8 @@ This repository contains Claude Code skills that integrate with Obsidian vaults 
 
 Automates daily planning by:
 - Fetching today's Google Calendar events
-- Creating daily note with meeting links
+- **Interactively filtering** meetings (skip broadcast events, declined meetings, personal time)
+- Creating daily note with meeting links and artifact references
 - Creating meeting files with enriched metadata (Google Meet links, descriptions, attachments)
 - Matching calendar attendees to People notes
 - Supporting idempotent updates (safe to run multiple times)
