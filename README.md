@@ -14,9 +14,9 @@ This repository contains Claude Code skills that integrate with Obsidian vaults 
 
 Automates daily planning by:
 - Fetching today's Google Calendar events
-- **Interactively filtering** meetings (skip broadcast events, declined meetings, personal time)
-- Creating daily note with meeting links and artifact references
-- Creating meeting files with enriched metadata (Google Meet links, descriptions, attachments)
+- **Auto-filtering** meetings (skips broadcast events, declined meetings, personal time blocks)
+- Creating daily note with meeting links
+- Creating meeting files with enriched metadata (Google Meet links, descriptions, attachments, transcripts)
 - Matching calendar attendees to People notes
 - Supporting idempotent updates (safe to run multiple times)
 
@@ -56,8 +56,8 @@ The `/daily-planner` skill should now be available in Claude Code.
 ## Requirements
 
 - **Claude Code** with plugin support
-- **Obsidian** vault with `.obsidian/` settings
-- **Google Calendar** CLI tool (`gog`) configured
+- **Obsidian**
+- **[gog](https://gogcli.sh)** - Google Calendar CLI tool
 - Vault conventions documented in `CLAUDE.md`
 
 ## Vault Conventions

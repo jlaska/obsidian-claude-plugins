@@ -12,124 +12,83 @@ Automates daily planning by fetching Google Calendar events and creating/updatin
 
 Invoke `/daily-planner` at the start of your day to:
 - Create today's daily note (if it doesn't exist)
-- Interactively select which meetings warrant full documentation
-- Create meeting note files for selected calendar events
+- Create meeting note files for actual meetings (auto-filtered)
 - Enrich meeting files with Google Meet links, descriptions, and document attachments
-- Link meetings and artifacts from the daily note
+- Match calendar attendees to People notes
+- Link all meetings from the daily note
 
 ## Workflow
 
 ### 1. Discover Vault Configuration
 
-Use the `obsidian-vault-discovery` skill to determine:
-- Vault root path
-- Daily notes folder and date format
-- Meetings folder path
-- Templates location
+Read Obsidian configuration to determine:
+- Vault root path (from `~/Library/Application Support/obsidian/obsidian.json`)
+- Daily notes folder and date format (from `.obsidian/daily-notes.json`)
+- Meetings folder path (from `CLAUDE.md`)
+- Templates location (from `.obsidian/templates.json`)
 
 ### 2. Fetch Calendar Data
 
 ```bash
-gog calendar events --today --json
+gog calendar events --today --json > /tmp/calendar_events.json
 ```
 
-### 3. Filter and Select Meetings
+### 3. Process Calendar Events
 
-Not all calendar events warrant full meeting documents. Apply filtering heuristics and user confirmation:
-
-**Auto-filter candidates** (suggest skipping):
-- **Attendance Status**: Meetings you declined or marked tentative
-- **Broadcast Events**: Titles containing "Week", "Office Hours", "All Hands", "Town Hall"
-- **Personal Time Slots**: Titles containing "Prep", "Lunch", "Focus Time", "Do Not Schedule", "OOO"
-- **Large Group Events**: >15 attendees (likely broadcast/informational)
-
-**Interactive Selection**:
-Use `AskUserQuestion` to present filtered calendar events and let the user select which meetings to create documents for.
-
-For each meeting, show:
-- **Meeting title**
-- **Time and duration**
-- **Attendee count**
-- **Attendance status** (accepted, tentative, declined)
-- **Has artifacts** (agenda doc, Gemini transcript available)
-
-**Three-tier handling**:
-1. **Full document**: Create meeting file with all metadata and link from daily note
-2. **Artifact links only**: Add just the artifact links (agenda, transcript, recording) to daily note's "Meeting Resources" section
-3. **Skip entirely**: Don't reference in daily note
-
-### 4. Determine File Paths
-
-Use the `obsidian_date_formatter.py` script to generate correct paths based on Obsidian's date format configuration:
+Run the Python script to create meeting notes and update daily note:
 
 ```bash
-# Daily note path
-uv run obsidian_date_formatter.py \
-  --vault-path /path/to/vault \
-  --date 2026-02-25 \
-  --type daily \
-  --json
-
-# Meeting file path
-uv run obsidian_date_formatter.py \
-  --vault-path /path/to/vault \
-  --date 2026-02-25 \
-  --type meeting \
-  --title "Meeting Title" \
-  --json
+python3 process_calendar.py <vault_root> <calendar_json_path> [date]
 ```
 
-This script:
-- Reads `.obsidian/daily-notes.json` for date format configuration
-- Converts moment.js format tokens to Python strftime
-- Handles directory structure and filename generation
+The script handles:
+- Auto-filtering non-meeting events
+- Matching attendees to People files
+- Creating meeting note files
+- Updating the daily note
 
-**Daily note**: Path structure determined by `.obsidian/daily-notes.json` format configuration
-**Meeting files**: Path structure determined by CLAUDE.md conventions and date format
+The script performs these steps automatically:
 
-### 5. Match Attendees to People Files
+#### 3.1. Auto-Filter Meetings
 
-For each calendar attendee, resolve to a person name using this cascade:
+Filter out non-meeting calendar events:
 
-**Step 1: Local File Search (by email)**
-Search PEOPLE/ directory for files with matching email in frontmatter:
-```bash
-grep -l "email:.*jpacker@redhat.com" PEOPLE/*.md
-```
+**Skip entirely** (not real meetings):
+- **Working location events**: `eventType: "workingLocation"`
+- **Declined meetings**: Your `responseStatus: "declined"`
+- **No attendees**: Events with only yourself or no attendees
+- **Broadcast events**: Events with `guestsCanSeeOtherGuests: false` and `guestsCanInviteOthers: false`
 
-**Step 2: Local File Search (by filename)**
-If Step 1 fails, search for filename matching attendee display name:
-```bash
-ls PEOPLE/ | grep -i "Joshua Packer"
-```
+**Create meeting notes for**:
+- Accepted meetings with other attendees
+- Recurring team syncs
+- 1:1 meetings
+- Any event with multiple real participants
 
-**Step 3: Google Directory Lookup (fallback)**
-If Steps 1-2 fail, use `gog people search` to resolve the email to a canonical name:
-```bash
-gog people search 'jpacker@redhat.com' --json
-```
+#### 3.2. Determine File Paths
 
-Returns:
-```json
-{
-  "people": [{
-    "resource": "people/102763333389904000289",
-    "name": "Joshua Packer",
-    "email": "jpacker@redhat.com"
-  }]
-}
-```
+**Daily note**: `{daily_notes.folder}/{format}/YYYY-MM-DD DayOfWeek.md`
+**Meeting files**: `{meetings.folder}/{format}/YYYY-MM-DD - <Title>.md`
 
-Then retry Steps 1-2 with the resolved name.
+Path format from `.obsidian/daily-notes.json`:
+- Format: `YYYY/MM-MMMM/YYYY-MM-DD dddd`
+- Example daily note: `DAILY_NOTES/2026/02-February/2026-02-25 Wednesday.md`
+- Example meeting: `MEETINGS/2026/02-February/2026-02-25 - Team Sync.md`
 
-**Step 4: Final Output**
-- If match found: `"[[Joshua Packer]]"` (quoted wikilink)
-- If no match but name resolved from Google: `"[[Joshua Packer]]"` (link to create new file)
-- If no match and no Google result: Use raw display name without link
+#### 3.3. Match Attendees to People Files
 
-### 6. Create/Update Meeting Files
+Match each calendar attendee using this cascade:
 
-For each calendar event, create meeting file with:
+1. **Email match** - Search PEOPLE/ files for matching email in frontmatter
+2. **Name match** - Match by filename (case-insensitive)
+3. **Google Directory fallback** - Use `gog people search --email <email> --json`
+4. **Display name** - Use the calendar display name
+
+Output: `"[[Joshua Packer]]"` (quoted wikilink)
+
+#### 3.4. Create/Update Meeting Files
+
+For each meeting, create file with:
 
 **Frontmatter**:
 ```yaml
@@ -139,22 +98,24 @@ attendees:
 tags:
   - Meetings
 created: YYYY-MM-DD HH:MM
-URL:
-gmeet: <hangout_link from calendar>
-agenda: <google doc URL if attachment exists>
+start: YYYY-MM-DDTHH:MM:SS-TZ
+end: YYYY-MM-DDTHH:MM:SS-TZ
+gmeet: <hangout_link>
+agenda: <google doc URL>
+transcript: <gemini transcript URL>
+URL: <calendar event link>
 ---
 ```
 
 **Body sections**:
 - `## Actions` - Empty
 - `## Agenda` - Calendar event description (if any)
-- `## Recent Meetings` - Base query block (from template)
+- `## Recent Meetings` - Base query block
 
-### 7. Update Daily Note
+#### 3.5. Update Daily Note
 
-Add/update sections in the daily note:
+Add/update `# 📅 Meetings` section:
 
-**Full meeting documents** - `# 📅 Meetings` section with wikilinks:
 ```markdown
 # 📅 Meetings
 
@@ -162,17 +123,7 @@ Add/update sections in the daily note:
 - [[YYYY-MM-DD - Meeting Title 2]]
 ```
 
-**Artifact-only links** - `## Meeting Resources` section:
-```markdown
-## Meeting Resources
-
-### OpenShift Week 2026 | Day 3
-- [Agenda](https://docs.google.com/document/d/...)
-- [Gemini Summary](https://meet.google.com/...)
-
-### Atlassian Cloud Office Hours: UAT
-- [Recording](https://drive.google.com/file/d/...)
-```
+Merges new meetings with existing links when run multiple times.
 
 ## Calendar Event Field Mapping
 
@@ -207,41 +158,30 @@ Google Meet artifacts:
 
 ## Meeting Filtering Logic
 
-### Skip Criteria (Auto-suggest)
+Events are automatically filtered based on these criteria:
+
+### Skip Automatically
+
+**Event Type**:
+- `eventType: "workingLocation"` - Office/location tracking events
 
 **Attendance Status**:
 - `responseStatus: "declined"` - You declined the meeting
-- `responseStatus: "needsAction"` - You haven't responded (treat as tentative)
-- `responseStatus: "tentative"` - You're tentative
 
-**Broadcast Event Keywords** (in title):
-- "Week", "Office Hours", "All Hands", "Town Hall", "Webinar", "Training"
-- Events with >15 attendees
+**No Real Attendees**:
+- No `attendees` field
+- Only attendee is yourself (no `non_self_attendees`)
 
-**Personal Time Keywords** (in title):
-- "Prep", "Lunch", "Break", "Focus Time", "Focus Block"
-- "Do Not Schedule", "DNS", "OOO", "Out of Office"
-- "Personal", "Appointment", "Hold"
+**Broadcast/Informational Events**:
+- `guestsCanSeeOtherGuests: false` AND `guestsCanInviteOthers: false`
+- Indicates one-way broadcast (e.g., company-wide events, office hours)
 
-### AskUserQuestion Format
+### Create Meeting Notes
 
-Present meetings grouped by recommendation:
-
-**Recommended to document** (accepted, <8 attendees, has artifacts):
-- James : Deepika 1:1 (10:00-10:30, 2 attendees) ✓ Accepted, Has agenda
-
-**Consider skipping** (broadcast events, large groups):
-- OpenShift Week 2026 | Day 3 (10:00-11:00, 50+ attendees) - Broadcast event
-- Atlassian Cloud Office Hours (14:00-14:30, 20 attendees) - Office hours
-
-**Definitely skip** (declined, personal time):
-- Managed Regional Platform sync (10:30-11:00) ✗ Declined
-- Prep Lunch (12:00-12:25) - Personal time
-
-User selects from three options per meeting:
-1. **Create document** - Full meeting file with metadata
-2. **Link artifacts only** - Add to Meeting Resources section if artifacts exist
-3. **Skip** - Don't reference in daily note
+All other events with:
+- Multiple participants (you + at least one other person)
+- Accepted or tentative status
+- Real meeting interaction expected
 
 ## Directory Structure
 
