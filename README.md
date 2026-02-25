@@ -34,29 +34,23 @@ Used internally by other skills to determine vault configuration.
 
 ## Installation
 
-### 1. Clone Repository
+### 1. Add Marketplace
 
 ```bash
-git clone https://github.com/jlaska/obsidian-claude-plugins.git ~/Projects/obsidian-claude-plugins
+claude plugin marketplace add jlaska/obsidian-claude-plugins
 ```
 
-### 2. Symlink to Claude Marketplaces
+### 2. Install Plugin
 
 ```bash
-ln -s ~/Projects/obsidian-claude-plugins ~/.claude/plugins/marketplaces/obsidian-claude-plugins
+claude plugin install obsidian-productivity@obsidian-claude-plugins
 ```
 
-### 3. Enable Plugin in Claude Settings
+The plugin is automatically enabled after installation.
 
-Add to `~/.claude/settings.json` under `enabledPlugins`:
+### 3. Verify Installation
 
-```json
-"obsidian-productivity@obsidian-claude-plugins": true
-```
-
-### 4. Restart Claude Code
-
-The `/daily-planner` skill should now be available.
+The `/daily-planner` skill should now be available in Claude Code.
 
 ## Requirements
 
