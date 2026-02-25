@@ -1,0 +1,23 @@
+{
+  "name": "obsidian-claude-plugins",
+  "owner": {
+    "name": "James Laska",
+    "email": "jlaska@redhat.com"
+  },
+  "metadata": {
+    "description": "Obsidian vault integration skills for Claude Code",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "obsidian-productivity",
+      "description": "Obsidian vault productivity skills including daily planning and vault configuration discovery",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/obsidian-vault-discovery",
+        "./skills/daily-planner"
+      ]
+    }
+  ]
+}
