@@ -285,8 +285,31 @@ class ObsidianDailyPlanner:
         print(f"Created meeting note: {filename}")
         return f"[[{date_str} - {sanitized_title}]]"
 
-    def create_daily_note(self, date_str: str, meeting_links: List[str]):
-        """Create or update daily note with meeting links."""
+    def _get_meeting_start_time(self, wikilink: str) -> str:
+        """Extract start time from meeting file frontmatter."""
+        # Extract filename from wikilink (format: [[filename]])
+        filename_match = re.match(r'\[\[(.*?)\]\]', wikilink)
+        if not filename_match:
+            return ''
+
+        filename = filename_match.group(1)
+
+        # Search for the meeting file
+        for meeting_file in self.meetings_dir.rglob(f"{filename}.md"):
+            try:
+                with open(meeting_file, 'r') as f:
+                    content = f.read()
+                    # Extract start time from frontmatter
+                    start_match = re.search(r'^start:\s*(.+)$', content, re.MULTILINE)
+                    if start_match:
+                        return start_match.group(1).strip()
+            except Exception as e:
+                print(f"Warning: Could not read {meeting_file}: {e}", file=sys.stderr)
+
+        return ''
+
+    def create_daily_note(self, date_str: str, meeting_entries: List[tuple[str, str]]):
+        """Create or update daily note with meeting entries (start_time, wikilink tuples)."""
         date_obj = datetime.strptime(date_str, '%Y-%m-%d')
         year = date_obj.strftime('%Y')
         month = date_obj.strftime('%m-%B')
@@ -313,9 +336,28 @@ class ObsidianDailyPlanner:
                 existing_links_text = meetings_section_match.group(1)
                 existing_links = re.findall(r'- (\[\[.*?\]\])', existing_links_text)
 
-                # Merge with new links
-                all_links = set(existing_links + meeting_links)
-                new_links_text = "\n".join([f"- {link}" for link in sorted(all_links)])
+                # Get start times for existing links
+                existing_entries = []
+                for link in existing_links:
+                    start_time = self._get_meeting_start_time(link)
+                    existing_entries.append((start_time, link))
+
+                # Merge with new entries
+                all_entries = existing_entries + meeting_entries
+
+                # Remove duplicates (keep unique wikilinks)
+                seen_links = set()
+                unique_entries = []
+                for start_time, link in all_entries:
+                    if link not in seen_links:
+                        seen_links.add(link)
+                        unique_entries.append((start_time, link))
+
+                # Sort by start time
+                unique_entries.sort(key=lambda x: x[0] if x[0] else '')
+
+                # Format as list items
+                new_links_text = "\n".join([f"- {link}" for _, link in unique_entries])
 
                 # Replace the section
                 new_content = content[:meetings_section_match.start(1)] + new_links_text + "\n" + content[meetings_section_match.end(1):]
@@ -326,7 +368,9 @@ class ObsidianDailyPlanner:
                 print(f"Updated daily note: {filename}")
             else:
                 # Add meetings section if it doesn't exist
-                meetings_text = "\n# 📅 Meetings\n\n" + "\n".join([f"- {link}" for link in meeting_links]) + "\n"
+                # Sort entries by start time
+                sorted_entries = sorted(meeting_entries, key=lambda x: x[0] if x[0] else '')
+                meetings_text = "\n# 📅 Meetings\n\n" + "\n".join([f"- {link}" for _, link in sorted_entries]) + "\n"
 
                 with open(daily_file, 'a') as f:
                     f.write(meetings_text)
@@ -396,8 +440,8 @@ done today
 
 """
 
-            # Add meeting links
-            for link in meeting_links:
+            # Add meeting links (already sorted by start time)
+            for _, link in meeting_entries:
                 content += f"- {link}\n"
 
             with open(daily_file, 'w') as f:
@@ -411,16 +455,31 @@ done today
             data = json.load(f)
 
         events = data.get('events', [])
-        meeting_links = []
+
+        # Sort events by start time for chronological order
+        # All-day events (with 'date' instead of 'dateTime') sort to beginning of day
+        def get_sort_key(event):
+            start = event.get('start', {})
+            if 'dateTime' in start:
+                return start['dateTime']
+            elif 'date' in start:
+                return start['date'] + 'T00:00:00'  # Sort to beginning of day
+            return ''
+
+        events.sort(key=get_sort_key)
+
+        # Collect meeting entries as (start_time, wikilink) tuples
+        meeting_entries = []
 
         for event in events:
             wikilink = self._create_meeting_note(event, date_str)
             if wikilink:
-                meeting_links.append(wikilink)
+                start_time = event.get('start', {}).get('dateTime', '')
+                meeting_entries.append((start_time, wikilink))
 
         # Create or update daily note
-        if meeting_links:
-            self.create_daily_note(date_str, meeting_links)
+        if meeting_entries:
+            self.create_daily_note(date_str, meeting_entries)
         else:
             print("No meetings to add to daily note.")
 
