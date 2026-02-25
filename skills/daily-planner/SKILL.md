@@ -32,10 +32,34 @@ Use the `obsidian-vault-discovery` skill to determine:
 gog calendar events --today --json
 ```
 
-### 3. Determine File Paths (using discovered config)
+### 3. Determine File Paths
 
-**Daily note**: `{daily_notes.folder}/{format}/YYYY-MM-DD DayOfWeek.md`
-**Meeting files**: `{meetings.folder}/{format}/YYYY-MM-DD - <Title>.md`
+Use the `obsidian_date_formatter.py` script to generate correct paths based on Obsidian's date format configuration:
+
+```bash
+# Daily note path
+uv run obsidian_date_formatter.py \
+  --vault-path /path/to/vault \
+  --date 2026-02-25 \
+  --type daily \
+  --json
+
+# Meeting file path
+uv run obsidian_date_formatter.py \
+  --vault-path /path/to/vault \
+  --date 2026-02-25 \
+  --type meeting \
+  --title "Meeting Title" \
+  --json
+```
+
+This script:
+- Reads `.obsidian/daily-notes.json` for date format configuration
+- Converts moment.js format tokens to Python strftime
+- Handles directory structure and filename generation
+
+**Daily note**: Path structure determined by `.obsidian/daily-notes.json` format configuration
+**Meeting files**: Path structure determined by CLAUDE.md conventions and date format
 
 ### 4. Match Attendees to People Files
 
