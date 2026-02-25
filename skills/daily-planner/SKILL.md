@@ -89,10 +89,43 @@ This script:
 
 ### 5. Match Attendees to People Files
 
-For each calendar attendee:
-1. Search `{people.folder}/` directory for matching files
-2. Match by email (from frontmatter) or name (from filename)
-3. Create quoted wikilinks: `"[[First Last]]"`
+For each calendar attendee, resolve to a person name using this cascade:
+
+**Step 1: Local File Search (by email)**
+Search PEOPLE/ directory for files with matching email in frontmatter:
+```bash
+grep -l "email:.*jpacker@redhat.com" PEOPLE/*.md
+```
+
+**Step 2: Local File Search (by filename)**
+If Step 1 fails, search for filename matching attendee display name:
+```bash
+ls PEOPLE/ | grep -i "Joshua Packer"
+```
+
+**Step 3: Google Directory Lookup (fallback)**
+If Steps 1-2 fail, use `gog people search` to resolve the email to a canonical name:
+```bash
+gog people search 'jpacker@redhat.com' --json
+```
+
+Returns:
+```json
+{
+  "people": [{
+    "resource": "people/102763333389904000289",
+    "name": "Joshua Packer",
+    "email": "jpacker@redhat.com"
+  }]
+}
+```
+
+Then retry Steps 1-2 with the resolved name.
+
+**Step 4: Final Output**
+- If match found: `"[[Joshua Packer]]"` (quoted wikilink)
+- If no match but name resolved from Google: `"[[Joshua Packer]]"` (link to create new file)
+- If no match and no Google result: Use raw display name without link
 
 ### 6. Create/Update Meeting Files
 
@@ -143,16 +176,16 @@ Add/update sections in the daily note:
 
 ## Calendar Event Field Mapping
 
-| Calendar Field | Obsidian Property | Notes |
-|---------------|-------------------|-------|
-| `summary` | File name | Sanitized for filesystem |
-| `attendees[].email` | `attendees` | Matched to PEOPLE/ files |
-| `attendees[].responseStatus` | - | Used for filtering (accepted/declined/tentative/needsAction) |
-| `hangoutLink` | `gmeet` | Google Meet URL |
-| `description` | `## Agenda` content | Raw text from event |
-| `attachments[].fileUrl` | `agenda`, `minutes`, `recording`, `transcript` | Based on title/type heuristics |
-| `start.dateTime` | `start` | Meeting start time |
-| `end.dateTime` | `end` | Meeting end time |
+| Calendar Field | Obsidian Property | Resolution Method | Notes |
+|---------------|-------------------|-------------------|-------|
+| `summary` | File name | - | Sanitized for filesystem |
+| `attendees[].email` | `attendees` | 1. Local grep for email in frontmatter<br/>2. Filename match<br/>3. `gog people search <email>` | Google Directory fallback |
+| `attendees[].responseStatus` | - | - | Used for filtering (accepted/declined/tentative/needsAction) |
+| `hangoutLink` | `gmeet` | - | Google Meet URL |
+| `description` | `## Agenda` content | - | Raw text from event |
+| `attachments[].fileUrl` | `agenda`, `minutes`, `recording`, `transcript` | - | Based on title/type heuristics |
+| `start.dateTime` | `start` | - | Meeting start time |
+| `end.dateTime` | `end` | - | Meeting end time |
 
 ## Attachment Classification
 
