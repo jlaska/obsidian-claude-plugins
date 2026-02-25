@@ -33,6 +33,24 @@ Discovers Obsidian vault configuration by reading:
 
 Used internally by other skills to determine vault configuration.
 
+### 3. `obsidian-vault-setup`
+
+**User-invocable**: Yes (`/obsidian-vault-setup`)
+
+Bootstraps an Obsidian vault with standard productivity conventions:
+- Checks for required folders (PEOPLE/, MEETINGS/, DAILY_NOTES/, TEMPLATES/)
+- Verifies template files exist
+- Creates missing items with sensible defaults
+- Copies default templates (Daily Note, Meeting, People)
+- Optionally creates CLAUDE.md with vault conventions
+
+**Usage**: `/obsidian-vault-setup`
+
+**When to use**:
+- Setting up a new vault for Claude Code integration
+- Ensuring vault has required conventions before using `/daily-planner`
+- Verifying vault structure
+
 ## Installation
 
 ### 1. Add Marketplace

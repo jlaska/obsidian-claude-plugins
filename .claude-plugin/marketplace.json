@@ -16,7 +16,8 @@
       "strict": false,
       "skills": [
         "./skills/obsidian-vault-discovery",
-        "./skills/daily-planner"
+        "./skills/daily-planner",
+        "./skills/obsidian-vault-setup"
       ]
     }
   ]

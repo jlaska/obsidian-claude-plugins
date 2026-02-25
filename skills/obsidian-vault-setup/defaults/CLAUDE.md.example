@@ -1,0 +1,174 @@
+# Obsidian Vault Conventions
+
+This document describes the structure and conventions used in this Obsidian vault for Claude Code integration.
+
+## Directory Structure
+
+```
+PEOPLE/               # People notes with contact information
+MEETINGS/             # Meeting notes organized by date
+  └── YYYY/
+      └── MM-Month/
+          └── YYYY-MM-DD - Title.md
+
+DAILY_NOTES/          # Daily notes organized by date
+  └── YYYY/
+      └── MM-Month/
+          └── YYYY-MM-DD DayOfWeek.md
+
+TEMPLATES/            # Note templates
+  ├── Daily Note Template.md
+  ├── Meeting Template.md
+  └── People Template.md
+
+SCRIPTS/              # Templater scripts (optional)
+```
+
+## File Naming Conventions
+
+### People Notes
+- Format: `First Last.md`
+- Location: `PEOPLE/`
+- Example: `PEOPLE/Jane Doe.md`
+
+### Meeting Notes
+- Format: `YYYY-MM-DD - Meeting Title.md`
+- Location: `MEETINGS/YYYY/MM-Month/`
+- Example: `MEETINGS/2026/02-February/2026-02-25 - Team Sync.md`
+
+### Daily Notes
+- Format: `YYYY-MM-DD DayOfWeek.md`
+- Location: `DAILY_NOTES/YYYY/MM-Month/`
+- Example: `DAILY_NOTES/2026/02-February/2026-02-25 Wednesday.md`
+
+## Frontmatter Standards
+
+### People Notes
+```yaml
+---
+company: Company Name
+location: City, State/Country
+email: email@example.com
+aliases:
+  - Nickname
+  - Alternate Name
+tags:
+  - People
+created: YYYY-MM-DD HH:MM
+---
+```
+
+### Meeting Notes
+```yaml
+---
+attendees:
+  - "[[Person Name]]"
+  - "[[Another Person]]"
+tags:
+  - Meetings
+created: YYYY-MM-DD HH:MM
+start: YYYY-MM-DDTHH:MM:SS-TZ
+end: YYYY-MM-DDTHH:MM:SS-TZ
+gmeet: https://meet.google.com/xxx-yyyy-zzz
+agenda: https://docs.google.com/document/d/...
+transcript: https://gemini.google.com/...
+URL: https://calendar.google.com/...
+---
+```
+
+### Daily Notes
+```yaml
+---
+created: YYYY-MM-DD HH:MM
+---
+```
+
+## Wikilink Conventions
+
+- **People references**: Always use quoted wikilinks in frontmatter: `"[[Person Name]]"`
+- **Meeting references**: Use unquoted wikilinks in body text: `[[2026-02-25 - Team Sync]]`
+- **Internal links**: Use `[[Note Name]]` or `[[Note Name#Section]]` for links
+
+## Dataview Queries
+
+### Recent Meetings with a Person
+```dataview
+TABLE WITHOUT ID
+  file.link as "Meeting",
+  dateformat(date(created), "yyyy-MM-dd") as "Date"
+FROM "MEETINGS"
+WHERE contains(attendees, this.file.name)
+SORT created DESC
+LIMIT 10
+```
+
+### Recent Meetings with Same Attendees
+```dataview
+TABLE WITHOUT ID
+  file.link as "Meeting",
+  attendees as "Attendees",
+  dateformat(date(created), "yyyy-MM-dd") as "Date"
+FROM "MEETINGS"
+WHERE contains(attendees, this.attendees[0])
+  AND file.name != this.file.name
+SORT created DESC
+LIMIT 5
+```
+
+## Templater Settings
+
+### Templates Folder
+`.obsidian/templates.json`:
+```json
+{
+  "folder": "TEMPLATES"
+}
+```
+
+### Daily Notes
+`.obsidian/daily-notes.json`:
+```json
+{
+  "template": "TEMPLATES/Daily Note Template",
+  "folder": "DAILY_NOTES",
+  "format": "YYYY/MM-MMMM/YYYY-MM-DD dddd"
+}
+```
+
+## Tags
+
+- `#People` - People notes
+- `#Meetings` - Meeting notes
+- `#Books` - Book notes (optional)
+- `#Projects` - Project notes (optional)
+
+## Required Plugins
+
+For full functionality with Claude Code skills:
+
+1. **Templater** - Template automation with JavaScript
+2. **Dataview** - Query-based note aggregation
+3. **Tasks** (optional) - Task management
+4. **Calendar** (optional) - Visual calendar integration
+
+## Claude Code Skills
+
+This vault is configured to work with:
+
+- `/daily-planner` - Automated daily note and meeting creation from Google Calendar
+- `/obsidian-vault-setup` - Bootstrap vault conventions and templates
+- `obsidian-vault-discovery` - Internal skill for discovering vault configuration
+
+## Date Formats
+
+- **Daily notes**: `YYYY-MM-DD dddd` (e.g., "2026-02-25 Wednesday")
+- **Meeting notes**: `YYYY-MM-DD` (e.g., "2026-02-25")
+- **Folder structure**: `YYYY/MM-MMMM` (e.g., "2026/02-February")
+- **Frontmatter timestamps**: `YYYY-MM-DD HH:MM` (e.g., "2026-02-25 09:30")
+
+## Notes
+
+- Use ALL-CAPS for top-level organizational folders (PEOPLE, MEETINGS, etc.)
+- Keep templates in `TEMPLATES/` for consistency
+- Use quoted wikilinks in frontmatter arrays for proper YAML parsing
+- Organize by date using year/month folder structure for scalability
