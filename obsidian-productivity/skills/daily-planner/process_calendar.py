@@ -47,50 +47,66 @@ class ObsidianDailyPlanner:
 
         return people_map
 
-    def _match_attendee(self, attendee: Dict) -> Optional[str]:
-        """Match calendar attendee to a person file."""
+    def _match_attendee(self, attendee: Dict) -> tuple[str, bool]:
+        """
+        Match calendar attendee to a person file.
+
+        Returns:
+            tuple[str, bool]: (name, is_people_match) where:
+                - name: The name to display (never empty)
+                - is_people_match: True if matched to People file, False otherwise
+        """
         email = attendee.get('email', '')
         display_name = attendee.get('displayName', '')
 
         # First try exact email match
         if email in self.people_map:
-            return self.people_map[email]
+            return (self.people_map[email], True)
 
         # Try matching by name
         if display_name:
             name_lower = display_name.lower()
             if name_lower in self.people_map:
-                return self.people_map[name_lower]
+                return (self.people_map[name_lower], True)
 
         # Use gog people search for fallback
+        gog_name = None
         if email:
             try:
                 import subprocess
                 result = subprocess.run(
-                    ['gog', 'people', 'search', '--email', email, '--json'],
+                    ['gog', 'people', 'search', '--json', email],
                     capture_output=True,
                     text=True,
                     timeout=5
                 )
                 if result.returncode == 0:
                     data = json.loads(result.stdout)
-                    if data and len(data) > 0:
-                        person = data[0]
-                        full_name = f"{person.get('givenName', '')} {person.get('sn', '')}".strip()
+                    people = data.get('people', [])
+                    if people and len(people) > 0:
+                        person = people[0]
+                        full_name = person.get('name', '').strip()
                         if full_name:
                             # Check if this person exists in our vault
                             if full_name.lower() in self.people_map:
-                                return self.people_map[full_name.lower()]
-                            # Otherwise return the name to create the link
-                            return full_name
+                                return (self.people_map[full_name.lower()], True)
+                            # Store gog name for fallback
+                            gog_name = full_name
             except Exception as e:
                 print(f"Warning: Could not search for {email}: {e}", file=sys.stderr)
 
-        # Fallback to display name or email
+        # Return fallbacks in priority order (all non-People matches)
+        if gog_name:
+            return (gog_name, False)
         if display_name:
-            return display_name
+            return (display_name, False)
+        # Extract username from email as last resort
+        if email:
+            email_username = email.split('@')[0]
+            return (email_username, False)
 
-        return None
+        # This should never happen, but just in case
+        return ("Unknown", False)
 
     def _sanitize_filename(self, title: str) -> str:
         """Sanitize meeting title for filename."""
@@ -180,9 +196,11 @@ class ObsidianDailyPlanner:
             if attendee.get('self'):
                 continue  # Skip self
 
-            person_name = self._match_attendee(attendee)
-            if person_name:
-                matched_attendees.append(f'"[[{person_name}]]"')
+            name, is_people_match = self._match_attendee(attendee)
+            if is_people_match:
+                matched_attendees.append(f'"[[{name}]]"')
+            else:
+                matched_attendees.append(f'"{name}"')
 
         # Build frontmatter
         frontmatter = ["---"]
