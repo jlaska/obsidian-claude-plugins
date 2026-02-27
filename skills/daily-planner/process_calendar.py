@@ -16,7 +16,7 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Set
+from typing import List, Dict, Optional, Set, Tuple
 
 
 def load_calendar_events(json_path: str) -> List[Dict]:
@@ -226,11 +226,11 @@ def load_daily_note_template(vault_root: Path) -> str:
     return body if body else "# 📅 Meetings\n\n"
 
 
-def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Optional[Path]:
+def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Optional[Tuple[str, Path]]:
     """
     Create or update a meeting note file.
 
-    Returns: Path to created/updated file, or None if skipped
+    Returns: Tuple of (start_time, Path) to created/updated file, or None if skipped
     """
     # Get file path
     meeting_file = get_meeting_file_path(event, vault_root, date_format)
@@ -339,14 +339,25 @@ def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Opti
     if meeting_file.exists():
         # TODO: Implement update logic (merge new attachments, update gmeet, etc.)
         print(f"  ⚠️  Meeting file already exists: {meeting_file.name}")
-        return meeting_file
+        return (start_dt, meeting_file)
 
     meeting_file.write_text(content)
     print(f"  ✓ Created meeting note: {meeting_file.name}")
-    return meeting_file
+    return (start_dt, meeting_file)
 
 
-def update_daily_note(meeting_files: List[Path], vault_root: Path, date_format: str, target_date: datetime):
+def get_meeting_start_time(meeting_file: Path) -> str:
+    """Extract start time from meeting file frontmatter."""
+    if not meeting_file.exists():
+        return ""
+    content = meeting_file.read_text()
+    for line in content.split('\n'):
+        if line.startswith('start:'):
+            return line.split('start:')[1].strip()
+    return ""
+
+
+def update_daily_note(meeting_files: List[Tuple[str, Path]], vault_root: Path, date_format: str, target_date: datetime):
     """
     Update the daily note with meeting links.
 
@@ -373,12 +384,14 @@ def update_daily_note(meeting_files: List[Path], vault_root: Path, date_format: 
         created_dt = datetime.now().strftime('%Y-%m-%d %H:%M')
         content = f"---\ncreated: {created_dt}\ntags:\n  - Daily_Notes\n---\n\n{template_body}"
 
-    # Build meeting links
-    new_meeting_links = set()
-    for meeting_file in sorted(meeting_files):
+    # Build meeting links - sort by start time (earliest first)
+    sorted_meetings = sorted(meeting_files, key=lambda x: x[0])
+    new_meeting_links = []
+    for start_time, meeting_file in sorted_meetings:
         # Create wikilink without extension
         link = f"- [[{meeting_file.stem}]]"
-        new_meeting_links.add(link)
+        if link not in new_meeting_links:
+            new_meeting_links.append(link)
 
     # Check if meetings section exists
     if '# 📅 Meetings' in content:
@@ -420,8 +433,29 @@ def update_daily_note(meeting_files: List[Path], vault_root: Path, date_format: 
                 # Empty lines before list
                 before_list.append(line)
 
-        # Merge existing and new links, then sort
-        all_links = sorted(existing_links | new_meeting_links)
+        # Merge existing and new links, then sort by start time
+        all_meeting_stems = set()
+        for link in existing_links:
+            # Extract stem from "- [[Meeting Stem]]"
+            stem = link.strip()[4:-2]  # Remove "- [[" and "]]"
+            all_meeting_stems.add(stem)
+        for link in new_meeting_links:
+            stem = link.strip()[4:-2]
+            all_meeting_stems.add(stem)
+
+        # Sort all meetings by start time
+        meetings_dir = vault_root / "MEETINGS"
+        meeting_times = []
+        for stem in all_meeting_stems:
+            # Find the meeting file
+            matches = list(meetings_dir.rglob(f"{stem}.md"))
+            if matches:
+                start_time = get_meeting_start_time(matches[0])
+                meeting_times.append((start_time, f"- [[{stem}]]"))
+            else:
+                meeting_times.append(("", f"- [[{stem}]]"))
+
+        all_links = [link for _, link in sorted(meeting_times)]
 
         # Rebuild section
         new_section_lines = [header]
@@ -444,9 +478,8 @@ def update_daily_note(meeting_files: List[Path], vault_root: Path, date_format: 
         new_section = '\n'.join(new_section_lines)
         content = content[:start_idx] + new_section + content[end_idx:]
     else:
-        # Append new section
-        all_links = sorted(new_meeting_links)
-        meetings_section = '# 📅 Meetings\n\n' + '\n'.join(all_links)
+        # Append new section - new_meeting_links is already sorted by start time
+        meetings_section = '# 📅 Meetings\n\n' + '\n'.join(new_meeting_links)
         content = content.rstrip() + '\n\n' + meetings_section + '\n'
 
     # Write updated daily note
@@ -484,9 +517,9 @@ def main():
         # Create meeting note
         print(f"\nProcessing: {summary}")
         try:
-            meeting_file = create_meeting_note(event, vault_root, "YYYY/MM-MMMM/YYYY-MM-DD dddd")
-            if meeting_file:
-                meeting_files.append(meeting_file)
+            result = create_meeting_note(event, vault_root, "YYYY/MM-MMMM/YYYY-MM-DD dddd")
+            if result:
+                meeting_files.append(result)
         except Exception as e:
             print(f"  ✗ Error creating meeting note: {e}")
 
