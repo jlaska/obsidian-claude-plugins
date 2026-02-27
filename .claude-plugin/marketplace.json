@@ -17,7 +17,8 @@
       "skills": [
         "./skills/obsidian-vault-discovery",
         "./skills/daily-planner",
-        "./skills/obsidian-vault-setup"
+        "./skills/obsidian-vault-setup",
+        "./skills/people-enrichment"
       ]
     }
   ]
