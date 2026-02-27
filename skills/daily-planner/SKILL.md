@@ -115,6 +115,14 @@ URL: <calendar event link>
 
 #### 3.5. Update Daily Note
 
+Create or update the daily note:
+
+**Body sections** (loaded from Daily Note Template):
+- Template is loaded from vault's `TEMPLATES/Daily Note Template.md`
+- Falls back to plugin default if vault template doesn't exist
+- Templater placeholders (e.g., `<% tp.file.creation_date() %>`) are automatically removed
+- Must include `# 📅 Meetings` section for meeting link injection
+
 Add/update `# 📅 Meetings` section:
 
 ```markdown

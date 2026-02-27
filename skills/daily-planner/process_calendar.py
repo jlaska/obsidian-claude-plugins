@@ -183,27 +183,47 @@ def extract_body_from_template(content: str) -> str:
     return content
 
 
-def load_meeting_template(vault_root: Path) -> str:
-    """Load Meeting Template body from vault or fallback to plugin default."""
+def load_template(vault_root: Path, template_name: str) -> str:
+    """Load template body from vault or fallback to plugin default.
+
+    Args:
+        vault_root: Path to Obsidian vault root
+        template_name: Name without extension, e.g., "Meeting Template", "Daily Note Template"
+
+    Returns:
+        Template body content (without frontmatter), or empty string if not found
+    """
     # 1. Try vault's template config
     templates_config = vault_root / ".obsidian" / "templates.json"
     if templates_config.exists():
         try:
             config = json.loads(templates_config.read_text())
             templates_folder = config.get('folder', 'TEMPLATES')
-            vault_template = vault_root / templates_folder / "Meeting Template.md"
+            vault_template = vault_root / templates_folder / f"{template_name}.md"
             if vault_template.exists():
                 return extract_body_from_template(vault_template.read_text())
         except (json.JSONDecodeError, Exception):
             pass
 
     # 2. Fallback to plugin default
-    plugin_default = Path(__file__).parent.parent / "obsidian-vault-setup" / "defaults" / "templates" / "Meeting Template.md"
+    plugin_default = Path(__file__).parent.parent / "obsidian-vault-setup" / "defaults" / "templates" / f"{template_name}.md"
     if plugin_default.exists():
         return extract_body_from_template(plugin_default.read_text())
 
-    # 3. Hardcoded fallback (last resort)
-    return "## Actions\n\n\n## Agenda\n\n"
+    # 3. Return empty string (callers provide their own fallback)
+    return ""
+
+
+def load_meeting_template(vault_root: Path) -> str:
+    """Load Meeting Template body from vault or fallback to plugin default."""
+    body = load_template(vault_root, "Meeting Template")
+    return body if body else "## Actions\n\n\n## Agenda\n\n"
+
+
+def load_daily_note_template(vault_root: Path) -> str:
+    """Load Daily Note Template body from vault or fallback to plugin default."""
+    body = load_template(vault_root, "Daily Note Template")
+    return body if body else "# 📅 Meetings\n\n"
 
 
 def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Optional[Path]:
@@ -348,8 +368,10 @@ def update_daily_note(meeting_files: List[Path], vault_root: Path, date_format: 
     if daily_note_file.exists():
         content = daily_note_file.read_text()
     else:
-        # Create from template or basic structure
-        content = f"---\ntags:\n  - Daily_Notes\n---\n\n# {date_part} {day_name}\n\n"
+        # Create from template
+        template_body = load_daily_note_template(vault_root)
+        created_dt = datetime.now().strftime('%Y-%m-%d %H:%M')
+        content = f"---\ncreated: {created_dt}\ntags:\n  - Daily_Notes\n---\n\n{template_body}"
 
     # Build meeting links
     new_meeting_links = set()

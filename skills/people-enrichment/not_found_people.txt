@@ -1,0 +1,36 @@
+# People Not Found in LDAP
+# Date: 2026-02-26
+# Total: 22 people
+
+These people could not be found via gog people search or LDAP.
+They may have left Red Hat, have different names in the directory, or may not be Red Hat employees.
+Manual review and update needed.
+
+1. Alec Henniger
+2. Amy Cormier
+3. Amy Stoner
+4. Andrew Hecox
+5. Anjali Mainkar
+6. Burundi Fletcher
+7. Connor Gorman
+8. Harold Giménez
+9. Irit Goihman
+10. James Talton
+11. Jeff Brent
+12. Jim Zimmerman
+13. Juliana Hsu
+14. Kyle Maxwell
+15. Lana Kairos
+16. Matt Carlton
+17. Meg Laska
+18. Narayanan Raghavan (email: bign@redhatcom - missing '.' before com)
+19. Pam Boney
+20. Paul Weil
+21. Vibhav Sreekanti
+22. Victor Kareh Fabregas (email: vkareh@redhat.com - LDAP returned no data)
+
+## Action Items
+- Verify these people are still with Red Hat
+- Check if names differ in the directory (nicknames, maiden names, etc.)
+- Manually update their files if you can find their LDAP data
+- Consider removing files for people who have left the company
