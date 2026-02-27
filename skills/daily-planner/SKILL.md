@@ -30,7 +30,7 @@ Read Obsidian configuration to determine:
 ### 2. Fetch Calendar Data
 
 ```bash
-gog calendar events --today --json > /tmp/calendar_events.json
+gog calendar events --today --json --all-pages > /tmp/calendar_events.json
 ```
 
 ### 3. Process Calendar Events
@@ -79,9 +79,9 @@ Path format from `.obsidian/daily-notes.json`:
 
 Match each calendar attendee using this cascade:
 
-1. **Email match** - Search PEOPLE/ files for matching email in frontmatter
+1. **Email match** - Search PEOPLE/ files for `mail: <email>` in frontmatter
 2. **Name match** - Match by filename (case-insensitive)
-3. **Google Directory fallback** - Use `gog people search --email <email> --json`
+3. **Google Directory fallback** - Use `gog people search <email> --json`
 4. **Display name** - Use the calendar display name
 
 Output: `"[[Joshua Packer]]"` (quoted wikilink)
@@ -107,10 +107,11 @@ URL: <calendar event link>
 ---
 ```
 
-**Body sections**:
-- `## Actions` - Empty
-- `## Agenda` - Calendar event description (if any)
-- `## Recent Meetings` - Base query block
+**Body sections** (loaded from Meeting Template):
+- Template is loaded from vault's `TEMPLATES/Meeting Template.md`
+- Falls back to plugin default if vault template doesn't exist
+- Calendar event description is injected into the `# Agenda` section
+- Templater placeholders (e.g., `<% tp.file.cursor() %>`) are automatically removed
 
 #### 3.5. Update Daily Note
 
@@ -130,7 +131,7 @@ Merges new meetings with existing links when run multiple times.
 | Calendar Field | Obsidian Property | Resolution Method | Notes |
 |---------------|-------------------|-------------------|-------|
 | `summary` | File name | - | Sanitized for filesystem |
-| `attendees[].email` | `attendees` | 1. Local grep for email in frontmatter<br/>2. Filename match<br/>3. `gog people search <email>` | Google Directory fallback |
+| `attendees[].email` | `attendees` | 1. Local grep for `mail:` field in frontmatter<br/>2. Filename match<br/>3. `gog people search <email> --json` | Returns full name from Google Directory |
 | `attendees[].responseStatus` | - | - | Used for filtering (accepted/declined/tentative/needsAction) |
 | `hangoutLink` | `gmeet` | - | Google Meet URL |
 | `description` | `## Agenda` content | - | Raw text from event |
