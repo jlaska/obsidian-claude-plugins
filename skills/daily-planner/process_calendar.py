@@ -214,6 +214,31 @@ def load_template(vault_root: Path, template_name: str) -> str:
     return ""
 
 
+def get_drive_file_info(file_id: str) -> Optional[Dict]:
+    """
+    Get file metadata from Google Drive.
+
+    Args:
+        file_id: Google Drive file ID
+
+    Returns:
+        Dict with file metadata (id, name, mimeType, webViewLink) or None if error
+    """
+    try:
+        result = subprocess.run(
+            ['gog', 'drive', 'get', file_id, '--json', '--results-only'],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            data = json.loads(result.stdout)
+            return data.get('file', {})
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
+        pass
+    return None
+
+
 def load_meeting_template(vault_root: Path) -> str:
     """Load Meeting Template body from vault or fallback to plugin default."""
     body = load_template(vault_root, "Meeting Template")
@@ -258,24 +283,54 @@ def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Opti
     agenda_links = []
     minutes_links = []
     recording_links = []
-    transcript_links = []
+    gemini_links = []
+    slides_links = []
+    other_links = []
 
     for attachment in attachments:
         file_url = attachment.get('fileUrl', '')
-        title = attachment.get('title', '').lower()
+        file_id = attachment.get('fileId', '')
 
-        # Classify attachment
-        if 'transcript' in title or 'gemini' in file_url:
-            transcript_links.append(file_url)
-        elif 'recording' in title:
-            recording_links.append(file_url)
-        elif 'minutes' in title or 'summary' in title or 'recap' in title:
-            minutes_links.append(file_url)
-        elif 'notes' in title or 'agenda' in title or '1:1' in title or '1-1' in title:
-            agenda_links.append(file_url)
-        elif 'docs.google.com' in file_url:
-            # Default Google Docs to agenda
-            agenda_links.append(file_url)
+        # Get detailed metadata from Drive
+        drive_file = get_drive_file_info(file_id) if file_id else None
+
+        if drive_file:
+            # Use Drive metadata for classification
+            name = drive_file.get('name', '').lower()
+            mime_type = drive_file.get('mimeType', '')
+            web_view_link = drive_file.get('webViewLink', file_url)
+
+            # Classify based on Drive metadata
+            if 'gemini' in name:
+                gemini_links.append(web_view_link)
+            elif 'recording' in name:
+                recording_links.append(web_view_link)
+            elif 'minutes' in name or 'summary' in name or 'recap' in name:
+                minutes_links.append(web_view_link)
+            elif mime_type == 'application/vnd.google-apps.presentation' or \
+                 'slides' in name or 'presentation' in name or 'deck' in name:
+                slides_links.append(web_view_link)
+            elif 'notes' in name or 'agenda' in name or '1:1' in name or '1-1' in name:
+                agenda_links.append(web_view_link)
+            else:
+                other_links.append(web_view_link)
+        else:
+            # Fallback to calendar attachment title if Drive lookup fails
+            title = attachment.get('title', '').lower()
+
+            if 'transcript' in title or 'gemini' in file_url:
+                gemini_links.append(file_url)
+            elif 'recording' in title:
+                recording_links.append(file_url)
+            elif 'minutes' in title or 'summary' in title or 'recap' in title:
+                minutes_links.append(file_url)
+            elif 'notes' in title or 'agenda' in title or '1:1' in title or '1-1' in title:
+                agenda_links.append(file_url)
+            elif 'docs.google.com' in file_url:
+                # Default Google Docs to agenda
+                agenda_links.append(file_url)
+            else:
+                other_links.append(file_url)
 
     # Get created timestamp
     created_dt = datetime.now().strftime('%Y-%m-%d %H:%M')
@@ -301,8 +356,12 @@ def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Opti
         frontmatter_lines.append(f'minutes: {minutes_links[0]}')
     if recording_links:
         frontmatter_lines.append(f'recording: {recording_links[0]}')
-    if transcript_links:
-        frontmatter_lines.append(f'transcript: {transcript_links[0]}')
+    if gemini_links:
+        frontmatter_lines.append(f'gemini: {gemini_links[0]}')
+    if slides_links:
+        frontmatter_lines.append(f'slides: {slides_links[0]}')
+    if other_links:
+        frontmatter_lines.append(f'attachments: {other_links[0]}')
     if html_link:
         frontmatter_lines.append(f'URL: {html_link}')
     frontmatter_lines.append('---')
