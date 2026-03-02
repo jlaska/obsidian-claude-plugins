@@ -262,8 +262,10 @@ def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Opti
 
     # Match attendees to people
     attendees = event.get('attendees', [])
+    # Filter out calendar owner (marked with self: true by Google Calendar API)
+    non_self_attendees = [a for a in attendees if not a.get('self')]
     attendee_links = []
-    for attendee in attendees:
+    for attendee in non_self_attendees:
         email = attendee.get('email', '')
         display_name = attendee.get('displayName') or email.split('@')[0]
         person_link = match_attendee_to_person(email, display_name, vault_root)
