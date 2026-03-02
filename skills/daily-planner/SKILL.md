@@ -142,7 +142,7 @@ Merges new meetings with existing links when run multiple times.
 | `attendees[].email` | `attendees` | 1. Local grep for `mail:` field in frontmatter<br/>2. Filename match<br/>3. `gog people search <email> --json` | Returns full name from Google Directory |
 | `attendees[].responseStatus` | - | - | Used for filtering (accepted/declined/tentative/needsAction) |
 | `hangoutLink` | `gmeet` | - | Google Meet URL |
-| `description` | `## Agenda` content | - | Raw text from event |
+| `description` | `## Agenda` content | HTML → Markdown conversion | Converts `<a>` tags to markdown links, `<br>` to newlines, strips other HTML |
 | `attachments[].fileUrl` | `agenda`, `minutes`, `recording`, `transcript` | - | Based on title/type heuristics |
 | `start.dateTime` | `start` | - | Meeting start time |
 | `end.dateTime` | `end` | - | Meeting end time |
@@ -175,7 +175,8 @@ Events are automatically filtered based on these criteria:
 - `eventType: "workingLocation"` - Office/location tracking events
 
 **Attendance Status**:
-- `responseStatus: "declined"` - You declined the meeting
+- Only meetings with `responseStatus: "accepted"` get meeting notes
+- Skip: `declined`, `tentative`, `needsAction` (not responded)
 
 **No Real Attendees**:
 - No `attendees` field
@@ -189,7 +190,7 @@ Events are automatically filtered based on these criteria:
 
 All other events with:
 - Multiple participants (you + at least one other person)
-- Accepted or tentative status
+- Accepted status (`responseStatus: "accepted"`)
 - Real meeting interaction expected
 
 ## Directory Structure

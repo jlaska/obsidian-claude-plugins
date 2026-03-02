@@ -40,12 +40,12 @@ def should_skip_event(event: Dict, user_email: str = "jlaska@redhat.com") -> boo
     if event.get('eventType') == 'workingLocation':
         return True
 
-    # Skip if user declined
+    # Skip if user hasn't accepted (only create notes for accepted meetings)
     attendees = event.get('attendees', [])
     for attendee in attendees:
         if attendee.get('email') == user_email:
-            if attendee.get('responseStatus') == 'declined':
-                return True
+            if attendee.get('responseStatus') != 'accepted':
+                return True  # Skip - only create notes for accepted meetings
 
     # Skip if no attendees or only yourself
     if not attendees:
@@ -74,6 +74,32 @@ def sanitize_title(title: str) -> str:
     # Collapse multiple spaces
     title = re.sub(r'\s+', ' ', title)
     return title.strip()
+
+
+def html_to_markdown(html_content: str) -> str:
+    """Convert HTML content to Obsidian-compatible markdown."""
+    # Convert <a href="url">text</a> to [text](url)
+    html_content = re.sub(
+        r'<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>([^<]+)</a>',
+        r'[\2](\1)',
+        html_content,
+        flags=re.IGNORECASE
+    )
+
+    # Convert <br> and <br/> to newlines
+    html_content = re.sub(r'<br\s*/?>', '\n', html_content, flags=re.IGNORECASE)
+
+    # Remove remaining HTML tags
+    html_content = re.sub(r'<[^>]+>', '', html_content)
+
+    # Decode common HTML entities
+    html_content = html_content.replace('&amp;', '&')
+    html_content = html_content.replace('&lt;', '<')
+    html_content = html_content.replace('&gt;', '>')
+    html_content = html_content.replace('&nbsp;', ' ')
+    html_content = html_content.replace('&quot;', '"')
+
+    return html_content.strip()
 
 
 def match_attendee_to_person(email: str, display_name: str, vault_root: Path) -> str:
@@ -373,6 +399,8 @@ def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Opti
 
     # Inject calendar description into Agenda section if present
     if description:
+        # Convert HTML to markdown
+        description = html_to_markdown(description)
         # Find the Agenda section and inject description after it
         if '# Agenda' in template_body:
             parts = template_body.split('# Agenda', 1)
