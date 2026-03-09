@@ -102,6 +102,171 @@ def html_to_markdown(html_content: str) -> str:
     return html_content.strip()
 
 
+def extract_doc_id_from_url(url: str) -> Optional[str]:
+    """Extract Google Doc ID from URL.
+
+    Args:
+        url: Google Docs URL (e.g., https://docs.google.com/document/d/DOC_ID/edit)
+
+    Returns:
+        Document ID or None if not found
+    """
+    # Match patterns like:
+    # https://docs.google.com/document/d/DOC_ID/edit
+    # https://docs.google.com/document/d/DOC_ID
+    match = re.search(r'/document/d/([a-zA-Z0-9_-]+)', url)
+    if match:
+        return match.group(1)
+    return None
+
+
+def fetch_gemini_doc_content(doc_id: str) -> Optional[str]:
+    """Fetch Google Doc content using gog docs cat.
+
+    Args:
+        doc_id: Google Docs document ID
+
+    Returns:
+        Plain text content of the document or None if error
+    """
+    try:
+        result = subprocess.run(
+            ['gog', 'docs', 'cat', doc_id],
+            capture_output=True,
+            text=True,
+            timeout=15
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, Exception) as e:
+        print(f"  ⚠️  Failed to fetch Gemini doc {doc_id}: {e}")
+    return None
+
+
+def extract_gemini_sections(content: str) -> Dict[str, str]:
+    """Extract Summary and Details sections from Gemini transcript.
+
+    Args:
+        content: Plain text content from Gemini document
+
+    Returns:
+        Dict with 'summary' and 'details' keys (may be empty strings)
+    """
+    sections = {'summary': '', 'details': ''}
+
+    # Find Summary section
+    summary_match = re.search(r'Summary[:\s]*\n(.+?)(?=\n(?:Details|Action items|$))', content, re.DOTALL | re.IGNORECASE)
+    if summary_match:
+        sections['summary'] = summary_match.group(1).strip()
+
+    # Find Details section
+    details_match = re.search(r'Details[:\s]*\n(.+?)(?=\n(?:Action items|$))', content, re.DOTALL | re.IGNORECASE)
+    if details_match:
+        sections['details'] = details_match.group(1).strip()
+
+    return sections
+
+
+def build_gemini_section(sections: Dict[str, str]) -> str:
+    """Format Gemini sections as markdown.
+
+    Args:
+        sections: Dict with 'summary' and 'details' keys
+
+    Returns:
+        Formatted markdown section
+    """
+    lines = ['## Notes by Gemini', '']
+
+    if sections.get('summary'):
+        lines.extend(['### Summary', '', sections['summary'], ''])
+
+    if sections.get('details'):
+        lines.extend(['### Details', '', sections['details'], ''])
+
+    return '\n'.join(lines)
+
+
+def update_meeting_with_gemini_notes(meeting_file: Path) -> bool:
+    """Update meeting file with Gemini transcript notes.
+
+    Args:
+        meeting_file: Path to meeting file
+
+    Returns:
+        True if notes were added, False if skipped
+    """
+    if not meeting_file.exists():
+        return False
+
+    content = meeting_file.read_text()
+
+    # Check if Gemini section already exists
+    if '## Notes by Gemini' in content:
+        return False
+
+    # Extract gemini URL from frontmatter
+    gemini_url = None
+    for line in content.split('\n'):
+        if line.startswith('gemini:'):
+            gemini_url = line.split('gemini:')[1].strip()
+            break
+
+    if not gemini_url:
+        return False
+
+    # Extract doc ID from URL
+    doc_id = extract_doc_id_from_url(gemini_url)
+    if not doc_id:
+        print(f"  ⚠️  Could not extract doc ID from: {gemini_url}")
+        return False
+
+    # Fetch transcript content
+    print(f"  📝 Fetching Gemini transcript...")
+    doc_content = fetch_gemini_doc_content(doc_id)
+    if not doc_content:
+        return False
+
+    # Extract Summary and Details sections
+    sections = extract_gemini_sections(doc_content)
+    if not sections['summary'] and not sections['details']:
+        print(f"  ⚠️  No Summary or Details sections found in transcript")
+        return False
+
+    # Build Gemini section
+    gemini_section = build_gemini_section(sections)
+
+    # Find insertion point (before # Recent Meetings or at end)
+    # Insert after # Agenda section
+    if '# Recent Meetings' in content:
+        # Insert before # Recent Meetings
+        parts = content.split('# Recent Meetings', 1)
+        new_content = parts[0].rstrip() + '\n\n---\n' + gemini_section + '\n---\n# Recent Meetings' + parts[1]
+    elif '# Agenda' in content:
+        # Insert after # Agenda section
+        # Find the end of Agenda section (next # or ---)
+        agenda_idx = content.find('# Agenda')
+        next_section = content.find('\n#', agenda_idx + 8)
+        separator_idx = content.find('\n---', agenda_idx + 8)
+
+        # Use whichever comes first (or end of file)
+        insert_idx = len(content)
+        if next_section != -1 and (separator_idx == -1 or next_section < separator_idx):
+            insert_idx = next_section
+        elif separator_idx != -1:
+            insert_idx = separator_idx
+
+        new_content = content[:insert_idx].rstrip() + '\n\n---\n' + gemini_section + '\n' + content[insert_idx:]
+    else:
+        # Append at end
+        new_content = content.rstrip() + '\n\n---\n' + gemini_section + '\n'
+
+    # Write updated content
+    meeting_file.write_text(new_content)
+    print(f"  ✓ Added Gemini notes to: {meeting_file.name}")
+    return True
+
+
 def match_attendee_to_person(email: str, display_name: str, vault_root: Path) -> str:
     """
     Match calendar attendee to Person file using cascade:
@@ -428,10 +593,17 @@ def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Opti
     if meeting_file.exists():
         # TODO: Implement update logic (merge new attachments, update gmeet, etc.)
         print(f"  ⚠️  Meeting file already exists: {meeting_file.name}")
+        # Try to add Gemini notes if not already present
+        update_meeting_with_gemini_notes(meeting_file)
         return (start_dt, meeting_file)
 
     meeting_file.write_text(content)
     print(f"  ✓ Created meeting note: {meeting_file.name}")
+
+    # Try to add Gemini notes immediately if available
+    if gemini_links:
+        update_meeting_with_gemini_notes(meeting_file)
+
     return (start_dt, meeting_file)
 
 
@@ -617,6 +789,13 @@ def main():
     # Update daily note
     if meeting_files:
         update_daily_note(meeting_files, vault_root, "YYYY/MM-MMMM/YYYY-MM-DD dddd", target_date)
+
+    # Second pass: Update meeting files with Gemini notes
+    # (transcripts may be added after initial calendar fetch)
+    if meeting_files:
+        print("\nChecking for Gemini transcripts...")
+        for _, meeting_file in meeting_files:
+            update_meeting_with_gemini_notes(meeting_file)
 
     print("\n✅ Daily planner complete!")
 
