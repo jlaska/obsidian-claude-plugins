@@ -2,7 +2,12 @@
 name: obsidian-vault-setup
 description: Bootstrap Obsidian vault conventions - checks for required folders and templates, creates missing items with sensible defaults
 user-invocable: true
-allowed-tools: Read, Glob, Bash, Write, AskUserQuestion
+allowed-tools:
+  - Read
+  - Glob
+  - Bash
+  - Write
+  - AskUserQuestion
 ---
 
 # Obsidian Vault Setup

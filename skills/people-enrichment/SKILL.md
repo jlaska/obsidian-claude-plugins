@@ -2,7 +2,11 @@
 name: people-enrichment
 description: Enrich Person files in Obsidian vault with Red Hat employee data from LDAP (job titles, locations, email, mobile)
 user-invocable: true
-allowed-tools: Read, Glob, Bash, Write
+allowed-tools:
+  - Read
+  - Glob
+  - Bash
+  - Write
 ---
 
 # People Enrichment

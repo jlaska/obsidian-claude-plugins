@@ -2,7 +2,10 @@
 name: obsidian-vault-discovery
 description: Discover Obsidian vault configuration - reads .obsidian settings to determine folder paths, templates, and conventions
 user-invocable: false
-allowed-tools: Read, Glob, Grep
+allowed-tools:
+  - Read
+  - Glob
+  - Grep
 ---
 
 # Obsidian Vault Discovery

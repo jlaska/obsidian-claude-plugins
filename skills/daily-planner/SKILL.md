@@ -1,7 +1,13 @@
 ---
 name: daily-planner
 description: Create daily agenda from Google Calendar - generates daily note and meeting files with enriched calendar data (gmeet links, descriptions, attachments)
-allowed-tools: Read, Glob, Grep, Bash, Write, Edit
+allowed-tools:
+  - Read
+  - Glob
+  - Grep
+  - Bash
+  - Write
+  - Edit
 ---
 
 # Daily Planner

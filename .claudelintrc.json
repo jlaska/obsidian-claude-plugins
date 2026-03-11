@@ -1,0 +1,18 @@
+{
+  "rules": {
+    "claude-md-size": "warn",
+    "claude-md-import-missing": "error",
+    "claude-md-import-circular": "error",
+    "skill-dangerous-command": "error",
+    "skill-eval-usage": "error",
+    "skill-path-traversal": "error",
+    "skill-missing-shebang": "off",
+    "skill-missing-comments": "off",
+    "skill-missing-changelog": "off",
+    "skill-missing-examples": "off",
+    "skill-missing-version": "off"
+  },
+  "ignorePatterns": [
+    "skills/obsidian-vault-setup/defaults/templates/"
+  ]
+}

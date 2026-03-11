@@ -1,0 +1,27 @@
+repos:
+  # Claudelint (stbenjam) - Plugin structure validation
+  - repo: local
+    hooks:
+      - id: claudelint-structure
+        name: claudelint (structure)
+        entry: uvx claudelint --strict
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  # Claudelint (pdugan20) - Security and quality validation
+  - repo: local
+    hooks:
+      - id: claudelint-quality
+        name: claudelint (quality)
+        entry: npx claude-code-lint check-all
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  # Markdownlint - Markdown style checker
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.44.0
+    hooks:
+      - id: markdownlint
+        args: ['--config', '.markdownlint.json', '--ignore-path', '.markdownlintignore']
