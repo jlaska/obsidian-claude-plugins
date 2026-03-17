@@ -807,11 +807,96 @@ def get_meeting_start_time(meeting_file: Path) -> str:
     return ""
 
 
+def read_meeting_frontmatter(meeting_file: Path) -> dict:
+    """Extract start, end, and attendees from meeting file YAML frontmatter."""
+    result: dict = {'start': '', 'end': '', 'attendees': [], 'gemini': ''}
+    if not meeting_file.exists():
+        return result
+    lines = meeting_file.read_text().split('\n')
+    in_frontmatter = False
+    in_attendees = False
+    for line in lines:
+        if line.strip() == '---':
+            if not in_frontmatter:
+                in_frontmatter = True
+                continue
+            else:
+                break
+        if not in_frontmatter:
+            continue
+        if line.startswith('start:'):
+            result['start'] = line.split('start:', 1)[1].strip()
+            in_attendees = False
+        elif line.startswith('end:'):
+            result['end'] = line.split('end:', 1)[1].strip()
+            in_attendees = False
+        elif line.startswith('gemini:'):
+            result['gemini'] = line.split('gemini:', 1)[1].strip()
+            in_attendees = False
+        elif line.startswith('attendees:'):
+            in_attendees = True
+        elif in_attendees and line.startswith('  - '):
+            attendee = line[4:].strip().strip('"').strip("'")
+            result['attendees'].append(attendee)
+        elif in_attendees and not line.startswith(' ') and line.strip():
+            in_attendees = False
+    return result
+
+
+def format_time_from_iso(iso_str: str) -> str:
+    """Convert ISO datetime string to display format (e.g., '8:30 AM')."""
+    if not iso_str:
+        return ''
+    try:
+        dt = datetime.fromisoformat(iso_str)
+        hour = dt.strftime('%I').lstrip('0') or '0'
+        minute = dt.strftime('%M')
+        ampm = dt.strftime('%p')
+        return f"{hour}:{minute} {ampm}"
+    except ValueError:
+        return iso_str
+
+
+def format_attendees(attendees: list, max_count: int = 6) -> str:
+    """Format attendees list as comma-separated string, truncating after max_count."""
+    if not attendees:
+        return ''
+    escaped = [a.replace('|', '\\|') for a in attendees]
+    if len(escaped) <= max_count:
+        return ', '.join(escaped)
+    return ', '.join(escaped[:max_count]) + ', ...'
+
+
+def build_meetings_table(meeting_rows: list) -> str:
+    """Build a markdown table from sorted meeting rows.
+
+    Args:
+        meeting_rows: List of (sort_key, stem, frontmatter_dict) tuples sorted by start time.
+    """
+    lines = [
+        '| Time | Meeting | Attendees | Summary |',
+        '|------|---------|-----------|---------|',
+    ]
+    for _, stem, fm in meeting_rows:
+        time_str = format_time_from_iso(fm.get('start', ''))
+        display_title = re.sub(r'^\d{4}-\d{2}-\d{2} - ', '', stem)
+        display_title_escaped = display_title.replace('|', '\\|')
+        stem_escaped = stem.replace('|', '\\|')
+        meeting_link = f'[[{stem_escaped}\\|{display_title_escaped}]]'
+        attendees_str = format_attendees(fm.get('attendees', []))
+        gemini_url = fm.get('gemini', '')
+        summary_cell = f'[🤖]({gemini_url})' if gemini_url else ''
+        lines.append(f'| {time_str} | {meeting_link} | {attendees_str} | {summary_cell} |')
+    return '\n'.join(lines)
+
+
 def update_daily_note(meeting_files: List[Tuple[str, Path]], vault_root: Path, date_format: str, target_date: datetime):
     """
-    Update the daily note with meeting links.
+    Update the daily note with a meeting table.
 
-    Adds/updates # 📅 Meetings section with wikilinks to meeting files.
+    Adds/updates # 📅 Meetings section with a markdown table showing time, linked
+    meeting name, and attendees. Recognizes both table rows and legacy bullet items
+    when merging with existing section content.
     """
     # Build daily note path
     year = target_date.strftime('%Y')
@@ -834,14 +919,8 @@ def update_daily_note(meeting_files: List[Tuple[str, Path]], vault_root: Path, d
         created_dt = datetime.now().strftime('%Y-%m-%d %H:%M')
         content = f"---\ncreated: {created_dt}\ntags:\n  - Daily_Notes\n---\n\n{template_body}"
 
-    # Build meeting links - sort by start time (earliest first)
-    sorted_meetings = sorted(meeting_files, key=lambda x: x[0])
-    new_meeting_links = []
-    for start_time, meeting_file in sorted_meetings:
-        # Create wikilink without extension
-        link = f"- [[{meeting_file.stem}]]"
-        if link not in new_meeting_links:
-            new_meeting_links.append(link)
+    new_meeting_stems = {meeting_file.stem for _, meeting_file in meeting_files}
+    meetings_dir = vault_root / "MEETINGS"
 
     # Check if meetings section exists
     if '# 📅 Meetings' in content:
@@ -853,83 +932,68 @@ def update_daily_note(meeting_files: List[Tuple[str, Path]], vault_root: Path, d
         if end_idx == -1:
             end_idx = len(content)
 
-        # Extract the section content
-        section_content = content[start_idx:end_idx]
-        lines = section_content.split('\n')
+        section_lines = content[start_idx:end_idx].split('\n')
+        header = section_lines[0]
 
-        # Separate header, list items, and other content
-        header = lines[0]  # '# 📅 Meetings'
-        existing_links = set()
-        before_list = []  # Content between header and first list item
-        after_list = []   # Content after last list item
-        in_list = False
-        list_ended = False
+        existing_stems: set = set()
+        before_table: list = []
+        after_table: list = []
+        in_content = False
+        table_done = False
 
-        for i, line in enumerate(lines[1:], 1):
-            # Check if this is a meeting list item
-            if line.strip().startswith('- [[') and not list_ended:
-                in_list = True
-                existing_links.add(line.strip())
-            elif in_list and line.strip() and not line.strip().startswith('- [['):
-                # Non-list content after list items
-                list_ended = True
-                after_list.append(line)
-            elif list_ended:
-                after_list.append(line)
-            elif not in_list and line.strip():
-                # Content before list
-                before_list.append(line)
-            elif not in_list:
-                # Empty lines before list
-                before_list.append(line)
+        for line in section_lines[1:]:
+            stripped = line.strip()
+            is_table_row = stripped.startswith('|')
+            is_bullet = stripped.startswith('- [[')
 
-        # Merge existing and new links, then sort by start time
-        all_meeting_stems = set()
-        for link in existing_links:
-            # Extract stem from "- [[Meeting Stem]]"
-            stem = link.strip()[4:-2]  # Remove "- [[" and "]]"
-            all_meeting_stems.add(stem)
-        for link in new_meeting_links:
-            stem = link.strip()[4:-2]
-            all_meeting_stems.add(stem)
+            if (is_table_row or is_bullet) and not table_done:
+                in_content = True
+                if is_table_row and '[[' in stripped:
+                    # Data row: extract stem from wikilink alias [[stem\|title]] or [[stem]]
+                    m = re.search(r'\[\[([^\\\]|]+)', stripped)
+                    if m:
+                        existing_stems.add(m.group(1).strip())
+                elif is_bullet:
+                    # Legacy bullet: "- [[stem]]"
+                    existing_stems.add(stripped[4:-2])
+            elif in_content and not (is_table_row or is_bullet) and not table_done:
+                table_done = True
+                after_table.append(line)
+            elif table_done:
+                after_table.append(line)
+            elif not in_content:
+                before_table.append(line)
 
-        # Sort all meetings by start time
-        meetings_dir = vault_root / "MEETINGS"
-        meeting_times = []
-        for stem in all_meeting_stems:
-            # Find the meeting file
+        # Merge stems and build sorted rows with frontmatter
+        all_stems = existing_stems | new_meeting_stems
+        meeting_rows = []
+        for stem in all_stems:
             matches = list(meetings_dir.rglob(f"{stem}.md"))
-            if matches:
-                start_time = get_meeting_start_time(matches[0])
-                meeting_times.append((start_time, f"- [[{stem}]]"))
-            else:
-                meeting_times.append(("", f"- [[{stem}]]"))
-
-        all_links = [link for _, link in sorted(meeting_times)]
+            fm = read_meeting_frontmatter(matches[0]) if matches else {'start': '', 'end': '', 'attendees': []}
+            meeting_rows.append((fm.get('start', ''), stem, fm))
+        meeting_rows.sort(key=lambda x: x[0])
 
         # Rebuild section
         new_section_lines = [header]
-
-        # Add content before list (if any)
-        if before_list:
-            new_section_lines.extend(before_list)
+        if before_table:
+            new_section_lines.extend(before_table)
         else:
-            # If no content before, add blank line after header
             new_section_lines.append('')
+        new_section_lines.append(build_meetings_table(meeting_rows))
+        if after_table:
+            new_section_lines.extend(after_table)
 
-        # Add merged meeting links
-        new_section_lines.extend(all_links)
-
-        # Add content after list (if any)
-        if after_list:
-            new_section_lines.extend(after_list)
-
-        # Replace section
         new_section = '\n'.join(new_section_lines)
         content = content[:start_idx] + new_section + content[end_idx:]
     else:
-        # Append new section - new_meeting_links is already sorted by start time
-        meetings_section = '# 📅 Meetings\n\n' + '\n'.join(new_meeting_links)
+        # Append new section
+        meeting_rows = []
+        for _, meeting_file in meeting_files:
+            fm = read_meeting_frontmatter(meeting_file)
+            meeting_rows.append((fm.get('start', ''), meeting_file.stem, fm))
+        meeting_rows.sort(key=lambda x: x[0])
+
+        meetings_section = '# 📅 Meetings\n\n' + build_meetings_table(meeting_rows)
         content = content.rstrip() + '\n\n' + meetings_section + '\n'
 
     # Write updated daily note

@@ -129,16 +129,20 @@ Create or update the daily note:
 - Templater placeholders (e.g., `<% tp.file.creation_date() %>`) are automatically removed
 - Must include `# 📅 Meetings` section for meeting link injection
 
-Add/update `# 📅 Meetings` section:
+Add/update `# 📅 Meetings` section with a markdown table:
 
 ```markdown
 # 📅 Meetings
 
-- [[YYYY-MM-DD - Meeting Title 1]]
-- [[YYYY-MM-DD - Meeting Title 2]]
+| Time | Meeting | Attendees | Summary |
+|------|---------|-----------|---------|
+| 8:00 AM | [[YYYY-MM-DD - Meeting Title 1\|Meeting Title 1]] | [[Person1]], [[Person2]] | [🤖](https://docs.google.com/document/d/...) |
+| 8:30 AM | [[YYYY-MM-DD - Meeting Title 2\|Meeting Title 2]] | [[Person3]] |  |
 ```
 
-Merges new meetings with existing links when run multiple times.
+Meeting links use wikilink alias syntax (`[[stem\|display title]]`) to show just the title without the date prefix. Attendees are truncated after 6 with `...`. The Summary column shows a 🤖 emoji linked to the Gemini transcript Google Doc when the meeting file has a `gemini` frontmatter field; otherwise the cell is empty.
+
+Merges new meetings with existing section on re-runs. Recognizes both table rows (`| ... [[Stem]] ... |`) and legacy bullet items (`- [[Stem]]`) when parsing existing section content.
 
 ## Calendar Event Field Mapping
 
