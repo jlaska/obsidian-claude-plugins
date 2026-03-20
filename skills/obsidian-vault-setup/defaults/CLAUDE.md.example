@@ -16,10 +16,21 @@ DAILY_NOTES/          # Daily notes organized by date
       └── MM-Month/
           └── YYYY-MM-DD DayOfWeek.md
 
+REFERENCES/           # Reference material (YouTube summaries, articles)
+  └── YYYY/
+      └── MM-Month/
+          └── YYYY-MM-DD - Title.md
+
+ATTACHMENTS/          # Attachments (transcripts, files)
+  └── YYYY/
+      └── MM-Month/
+          └── YYYY-MM-DD - Title - transcript.md
+
 TEMPLATES/            # Note templates
   ├── Daily Note Template.md
   ├── Meeting Template.md
-  └── People Template.md
+  ├── People Template.md
+  └── YouTube Summary Template.md
 
 SCRIPTS/              # Templater scripts (optional)
 ```
@@ -139,6 +150,10 @@ LIMIT 5
 
 - `#People` - People notes
 - `#Meetings` - Meeting notes
+- `#References` - Reference material (YouTube, articles)
+- `#YouTube` - YouTube video notes
+- `#Attachments` - Attachment files (transcripts, exports)
+- `#Transcript` - Transcript files
 - `#Books` - Book notes (optional)
 - `#Projects` - Project notes (optional)
 
@@ -157,6 +172,7 @@ This vault is configured to work with:
 
 - `/daily-planner` - Automated daily note and meeting creation from Google Calendar
 - `/obsidian-vault-setup` - Bootstrap vault conventions and templates
+- `/youtube-summary` - Summarize YouTube videos and save to REFERENCES/
 - `obsidian-vault-discovery` - Internal skill for discovering vault configuration
 
 ## Date Formats
