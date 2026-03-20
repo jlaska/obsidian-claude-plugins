@@ -221,7 +221,8 @@ def get_note_path(vault_root: Path, safe_title: str, dt: datetime) -> Path:
 
 def get_transcript_path(vault_root: Path, safe_title: str, dt: datetime) -> Path:
     """Return full path for ATTACHMENTS transcript."""
-    return vault_root / 'ATTACHMENTS' / 'Transcripts' / f"{safe_title} - transcript.md"
+    date_str = dt.strftime('%Y-%m-%d')
+    return vault_root / 'ATTACHMENTS' / 'Transcripts' / f"{date_str} - {safe_title} - transcript.md"
 
 
 def format_duration(seconds: int) -> str:
