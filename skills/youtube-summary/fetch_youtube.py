@@ -144,7 +144,8 @@ def fetch_transcript(video_id: str) -> Optional[str]:
         raise ImportError("youtube-transcript-api is required. Install with: pip install youtube-transcript-api")
 
     try:
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        ytt_api = YouTubeTranscriptApi()
+        transcript_list = ytt_api.list(video_id)
     except Exception as e:
         print(f"  Warning: Could not list transcripts: {e}", file=sys.stderr)
         return None
@@ -181,7 +182,7 @@ def fetch_transcript(video_id: str) -> Optional[str]:
         # Concatenate text, joining with spaces, normalizing whitespace
         parts = []
         for entry in entries:
-            text = entry.get('text', '').strip()
+            text = entry.text.strip()
             # Remove [Music], [Applause] etc.
             text = re.sub(r'\[[^\]]+\]', '', text).strip()
             if text:
