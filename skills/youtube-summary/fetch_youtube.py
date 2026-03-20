@@ -221,9 +221,7 @@ def get_note_path(vault_root: Path, safe_title: str, dt: datetime) -> Path:
 
 def get_transcript_path(vault_root: Path, safe_title: str, dt: datetime) -> Path:
     """Return full path for ATTACHMENTS transcript."""
-    date_str = dt.strftime('%Y-%m-%d')
-    subfolder = get_date_subfolder(dt)
-    return vault_root / 'ATTACHMENTS' / subfolder / f"{date_str} - {safe_title} - transcript.md"
+    return vault_root / 'ATTACHMENTS' / 'Transcripts' / f"{safe_title} - transcript.md"
 
 
 def format_duration(seconds: int) -> str:
@@ -251,6 +249,7 @@ def write_transcript_file(path: Path, metadata: dict, transcript: str) -> None:
     title = metadata['title']
     url = metadata['url']
 
+    published = metadata.get('published', '')
     lines = [
         '---',
         f'title: "{title} - Transcript"',
@@ -258,6 +257,7 @@ def write_transcript_file(path: Path, metadata: dict, transcript: str) -> None:
         'tags:',
         '  - Attachments',
         '  - Transcript',
+        f'date: {published}',
         f'created: {created_dt}',
         '---',
         '',
