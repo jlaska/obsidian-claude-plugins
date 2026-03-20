@@ -83,7 +83,21 @@ If `already_exists` is `true`:
 
 Read the transcript file from the path returned in `transcript_path`.
 
-### 5. Generate Summary, Takeaways, and Tags
+### 5. Discover Vault Context
+
+Scan the vault for notes related to the video's topics. Use 3-5 targeted keyword searches based on people names, project names, and key concepts from the transcript. Exclude script folders:
+
+```bash
+# Search for people or topic keywords across the vault
+grep -rl "<keyword>" "<vault_root>" \
+  --include="*.md" \
+  --exclude-dir=SCRIPTS --exclude-dir=DATAVIEW_SCRIPTS \
+  2>/dev/null | head -20
+```
+
+Note any matching notes — they will be referenced in the Vault Connections section.
+
+### 6. Generate Summary, Takeaways, Tags, and Vault Connections
 
 First, scan existing tags in REFERENCES/ for consistency:
 
@@ -95,8 +109,9 @@ Then generate:
 - **Summary**: A concise paragraph (3-6 sentences) capturing the core message
 - **Key Takeaways**: 5-8 bullet points with the most actionable or insightful points
 - **Tags**: 2-4 tags relevant to the content (use existing tags where possible, suggest new ones if needed; always include `References` and `YouTube`)
+- **Vault Connections**: 2-5 bullet points connecting video themes to existing vault notes using `[[wiki-links]]`. Omit this field if no meaningful connections are found.
 
-### 6. Write Summary JSON
+### 7. Write Summary JSON
 
 Write the LLM-generated content to a temp file:
 
@@ -107,13 +122,14 @@ Write the LLM-generated content to a temp file:
     "First key insight or action",
     "Second key insight"
   ],
-  "tags": ["References", "YouTube", "Leadership", "Engineering"]
+  "tags": ["References", "YouTube", "Leadership", "Engineering"],
+  "vault_connections": "- Relates to [[Person Name]] discussed in [[Meeting Note]]\n- Connects to themes in [[Reference Note]]"
 }
 ```
 
 Write to `/tmp/yt_summary_<video_id>.json`.
 
-### 7. Save Summary to Note
+### 8. Save Summary to Note
 
 Run the script in save-summary mode:
 
@@ -121,9 +137,9 @@ Run the script in save-summary mode:
 python3 skills/youtube-summary/fetch_youtube.py "<vault_root>" "<youtube_url>" --save-summary /tmp/yt_summary_<video_id>.json
 ```
 
-The script injects the summary, takeaways, and tags into the note's frontmatter and body sections.
+The script injects the summary, takeaways, tags, and vault connections into the note's frontmatter and body sections.
 
-### 8. Confirm to User
+### 9. Confirm to User
 
 Report completion:
 - Note location (relative to vault root)
@@ -159,6 +175,11 @@ transcript: "[[YYYY-MM-DD - Video Title - transcript]]"
 
 - <bullet 1>
 - <bullet 2>
+
+# Vault Connections
+
+- Relates to [[Person Name]] discussed in [[Meeting Note]]
+- Connects to themes in [[Reference Note]]
 ```
 
 ## Directory Structure

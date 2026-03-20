@@ -239,6 +239,47 @@ def format_duration(seconds: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Template loading
+# ---------------------------------------------------------------------------
+
+TEMPLATE_NAME = "YouTube Summarization Template.md"
+
+
+def load_youtube_template(vault_root: Path) -> Optional[str]:
+    """Load YouTube Summarization Template from vault or fallback to plugin default.
+
+    Checks vault's configured templates folder (from .obsidian/templates.json),
+    then falls back to the defaults/templates/ directory alongside this script.
+    Returns full file content (including frontmatter), or None if not found.
+    """
+    # 1. Try vault's template config
+    templates_config = vault_root / ".obsidian" / "templates.json"
+    if templates_config.exists():
+        try:
+            config = json.loads(templates_config.read_text())
+            templates_folder = config.get('folder', 'TEMPLATES')
+            vault_template = vault_root / templates_folder / TEMPLATE_NAME
+            if vault_template.exists():
+                return vault_template.read_text()
+        except Exception:
+            pass
+
+    # 2. Fallback to plugin default
+    plugin_default = Path(__file__).parent / "defaults" / "templates" / TEMPLATE_NAME
+    if plugin_default.exists():
+        return plugin_default.read_text()
+
+    return None
+
+
+def render_template(template: str, variables: dict) -> str:
+    """Replace {{key}} placeholders in template with values from variables dict."""
+    for key, value in variables.items():
+        template = template.replace(f'{{{{{key}}}}}', str(value))
+    return template
+
+
+# ---------------------------------------------------------------------------
 # File writers
 # ---------------------------------------------------------------------------
 
@@ -268,8 +309,8 @@ def write_transcript_file(path: Path, metadata: dict, transcript: str) -> None:
     path.write_text('\n'.join(lines))
 
 
-def write_skeleton_note(path: Path, metadata: dict, transcript_stem: str) -> None:
-    """Write skeleton reference note to REFERENCES/ with empty Summary/Takeaways."""
+def write_skeleton_note(path: Path, metadata: dict, transcript_stem: str, vault_root: Path = None) -> None:
+    """Write skeleton reference note to REFERENCES/ with empty Summary/Takeaways/Vault Connections."""
     path.parent.mkdir(parents=True, exist_ok=True)
     created_dt = datetime.now().strftime('%Y-%m-%d %H:%M')
 
@@ -279,6 +320,23 @@ def write_skeleton_note(path: Path, metadata: dict, transcript_stem: str) -> Non
     published = metadata['published']
     duration = format_duration(metadata['duration_seconds'])
 
+    # Try template-driven approach first
+    if vault_root is not None:
+        template = load_youtube_template(vault_root)
+        if template is not None:
+            variables = {
+                'title': title,
+                'channel': channel,
+                'url': url,
+                'published': published,
+                'duration': duration,
+                'created': created_dt,
+                'transcript_stem': transcript_stem,
+            }
+            path.write_text(render_template(template, variables))
+            return
+
+    # Hardcoded fallback
     lines = [
         '---',
         f'title: "{title}"',
@@ -297,6 +355,9 @@ def write_skeleton_note(path: Path, metadata: dict, transcript_stem: str) -> Non
         '',
         '',
         '# Key Takeaways',
+        '',
+        '',
+        '# Vault Connections',
         '',
         '',
     ]
@@ -334,6 +395,11 @@ def save_summary(note_path: Path, summary_json: dict) -> None:
     if takeaways:
         bullets = '\n'.join(f'- {t}' for t in takeaways)
         content = _replace_section(content, '# Key Takeaways', bullets)
+
+    # --- Update # Vault Connections section ---
+    vault_connections = summary_json.get('vault_connections', '').strip()
+    if vault_connections:
+        content = _replace_section(content, '# Vault Connections', vault_connections)
 
     note_path.write_text(content)
 
@@ -458,7 +524,7 @@ def fetch_mode(vault_root: Path, url: str) -> dict:
     # Write skeleton note
     transcript_stem = transcript_path.stem
     print(f"Creating reference note...", file=sys.stderr)
-    write_skeleton_note(note_path, metadata, transcript_stem)
+    write_skeleton_note(note_path, metadata, transcript_stem, vault_root=vault_root)
 
     print(f"Done.", file=sys.stderr)
 
