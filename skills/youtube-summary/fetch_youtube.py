@@ -114,6 +114,15 @@ def fetch_metadata(video_id: str) -> dict:
         except ValueError:
             published = upload_date
 
+    # Extract heatmap (most-replayed) peaks if available
+    heatmap_peaks = None
+    raw_heatmap = info.get('heatmap')
+    if raw_heatmap:
+        # Pick top 10 peaks by intensity, then sort by start_time for readability
+        sorted_by_intensity = sorted(raw_heatmap, key=lambda x: x.get('value', 0), reverse=True)
+        top_peaks = sorted_by_intensity[:10]
+        heatmap_peaks = sorted(top_peaks, key=lambda x: x.get('start_time', 0))
+
     return {
         'title': title,
         'channel': channel,
@@ -121,6 +130,7 @@ def fetch_metadata(video_id: str) -> dict:
         'published': published,
         'description': description,
         'url': url,
+        'heatmap_peaks': heatmap_peaks,
     }
 
 
@@ -128,7 +138,7 @@ def fetch_metadata(video_id: str) -> dict:
 # Transcript
 # ---------------------------------------------------------------------------
 
-def fetch_transcript(video_id: str) -> Optional[str]:
+def fetch_transcript(video_id: str) -> tuple[Optional[str], Optional[str]]:
     """Fetch transcript using youtube-transcript-api.
 
     Tries in order:
@@ -136,7 +146,9 @@ def fetch_transcript(video_id: str) -> Optional[str]:
       2. English auto-generated captions
       3. Any available language
 
-    Returns plain text transcript (no timestamps), or None if unavailable.
+    Returns (plain_text, timestamped_text) tuple, or (None, None) if unavailable.
+    The plain_text joins all words without timestamps.
+    The timestamped_text prefixes each entry with [MM:SS].
     """
     try:
         from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
@@ -148,7 +160,7 @@ def fetch_transcript(video_id: str) -> Optional[str]:
         transcript_list = ytt_api.list(video_id)
     except Exception as e:
         print(f"  Warning: Could not list transcripts: {e}", file=sys.stderr)
-        return None
+        return None, None
 
     transcript = None
 
@@ -175,22 +187,25 @@ def fetch_transcript(video_id: str) -> Optional[str]:
             pass
 
     if transcript is None:
-        return None
+        return None, None
 
     try:
         entries = transcript.fetch()
-        # Concatenate text, joining with spaces, normalizing whitespace
         parts = []
+        timestamped_parts = []
         for entry in entries:
             text = entry.text.strip()
             # Remove [Music], [Applause] etc.
             text = re.sub(r'\[[^\]]+\]', '', text).strip()
             if text:
                 parts.append(text)
-        return ' '.join(parts)
+                start_seconds = int(getattr(entry, 'start', 0))
+                mins, secs = divmod(start_seconds, 60)
+                timestamped_parts.append(f"[{mins}:{secs:02d}] {text}")
+        return ' '.join(parts), '\n'.join(timestamped_parts)
     except Exception as e:
         print(f"  Warning: Could not fetch transcript entries: {e}", file=sys.stderr)
-        return None
+        return None, None
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +238,18 @@ def get_transcript_path(vault_root: Path, safe_title: str, dt: datetime) -> Path
     """Return full path for ATTACHMENTS transcript."""
     date_str = dt.strftime('%Y-%m-%d')
     return vault_root / 'ATTACHMENTS' / 'Transcripts' / f"{date_str} - {safe_title} - transcript.md"
+
+
+def get_timestamped_transcript_path(vault_root: Path, safe_title: str, dt: datetime) -> Path:
+    """Return full path for ATTACHMENTS timestamped transcript (LLM input only)."""
+    date_str = dt.strftime('%Y-%m-%d')
+    return vault_root / 'ATTACHMENTS' / 'Transcripts' / f"{date_str} - {safe_title} - transcript-timestamped.md"
+
+
+def get_heatmap_path(vault_root: Path, safe_title: str, dt: datetime) -> Path:
+    """Return full path for ATTACHMENTS heatmap peaks file (LLM input only)."""
+    date_str = dt.strftime('%Y-%m-%d')
+    return vault_root / 'ATTACHMENTS' / 'Transcripts' / f"{date_str} - {safe_title} - heatmap.md"
 
 
 def format_duration(seconds: int) -> str:
@@ -309,6 +336,30 @@ def write_transcript_file(path: Path, metadata: dict, transcript: str) -> None:
     path.write_text('\n'.join(lines))
 
 
+def write_timestamped_transcript_file(path: Path, timestamped_text: str) -> None:
+    """Write timestamped transcript file to ATTACHMENTS/ for LLM use during summarization."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(timestamped_text + '\n')
+
+
+def write_heatmap_file(path: Path, heatmap_peaks: list) -> None:
+    """Write heatmap peaks file to ATTACHMENTS/ for LLM use during summarization.
+
+    Format: [MM:SS]-[MM:SS] intensity: 0.85
+    Sorted by start_time (already guaranteed by fetch_metadata).
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ['# Most Replayed Peaks (YouTube Heatmap)', '']
+    for peak in heatmap_peaks:
+        start = int(peak.get('start_time', 0))
+        end = int(peak.get('end_time', start))
+        value = peak.get('value', 0)
+        start_mins, start_secs = divmod(start, 60)
+        end_mins, end_secs = divmod(end, 60)
+        lines.append(f"[{start_mins}:{start_secs:02d}]-[{end_mins}:{end_secs:02d}] intensity: {value:.2f}")
+    path.write_text('\n'.join(lines) + '\n')
+
+
 def write_skeleton_note(path: Path, metadata: dict, transcript_stem: str, vault_root: Path = None) -> None:
     """Write skeleton reference note to REFERENCES/ with empty Summary/Takeaways/Vault Connections."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -351,13 +402,25 @@ def write_skeleton_note(path: Path, metadata: dict, transcript_stem: str, vault_
         f'transcript: "[[{transcript_stem}]]"',
         '---',
         '',
+        '# TLDR',
+        '',
+        '',
         '# Summary',
         '',
         '',
         '# Key Takeaways',
         '',
         '',
+        '# Protocols & Instructions',
+        '',
+        '',
+        '# Most Replayed',
+        '',
+        '',
         '# Vault Connections',
+        '',
+        '',
+        '# Recommendations',
         '',
         '',
     ]
@@ -387,6 +450,11 @@ def save_summary(note_path: Path, summary_json: dict) -> None:
     if new_tags:
         content = _merge_frontmatter_tags(content, new_tags)
 
+    # --- Update # TLDR section ---
+    tldr = summary_json.get('tldr', '').strip()
+    if tldr:
+        content = _replace_section(content, '# TLDR', tldr)
+
     # --- Update # Summary section ---
     if summary_text:
         content = _replace_section(content, '# Summary', summary_text)
@@ -396,10 +464,25 @@ def save_summary(note_path: Path, summary_json: dict) -> None:
         bullets = '\n'.join(f'- {t}' for t in takeaways)
         content = _replace_section(content, '# Key Takeaways', bullets)
 
+    # --- Update # Protocols & Instructions section ---
+    protocols = summary_json.get('protocols', '').strip()
+    if protocols:
+        content = _replace_section(content, '# Protocols & Instructions', protocols)
+
+    # --- Update # Most Replayed section ---
+    most_replayed = summary_json.get('most_replayed', '').strip()
+    if most_replayed:
+        content = _replace_section(content, '# Most Replayed', most_replayed)
+
     # --- Update # Vault Connections section ---
     vault_connections = summary_json.get('vault_connections', '').strip()
     if vault_connections:
         content = _replace_section(content, '# Vault Connections', vault_connections)
+
+    # --- Update # Recommendations section ---
+    recommendations = summary_json.get('recommendations', '').strip()
+    if recommendations:
+        content = _replace_section(content, '# Recommendations', recommendations)
 
     note_path.write_text(content)
 
@@ -490,6 +573,8 @@ def fetch_mode(vault_root: Path, url: str) -> dict:
 
     note_path = get_note_path(vault_root, safe_title, file_dt)
     transcript_path = get_transcript_path(vault_root, safe_title, file_dt)
+    timestamped_transcript_path = get_timestamped_transcript_path(vault_root, safe_title, file_dt)
+    heatmap_path = get_heatmap_path(vault_root, safe_title, file_dt)
 
     # Check idempotency
     if note_path.exists():
@@ -502,6 +587,8 @@ def fetch_mode(vault_root: Path, url: str) -> dict:
             'published': metadata['published'],
             'note_path': str(note_path),
             'transcript_path': str(transcript_path),
+            'timestamped_transcript_path': str(timestamped_transcript_path) if timestamped_transcript_path.exists() else None,
+            'heatmap_path': str(heatmap_path) if heatmap_path.exists() else None,
             'already_exists': True,
             'transcript_length': 0,
         }
@@ -511,15 +598,23 @@ def fetch_mode(vault_root: Path, url: str) -> dict:
 
     # Fetch transcript
     print(f"Fetching transcript...", file=sys.stderr)
-    transcript = fetch_transcript(video_id)
+    plain_transcript, timestamped_transcript = fetch_transcript(video_id)
 
     transcript_length = 0
-    if transcript:
-        transcript_length = len(transcript)
+    if plain_transcript:
+        transcript_length = len(plain_transcript)
         print(f"Writing transcript ({transcript_length} chars)...", file=sys.stderr)
-        write_transcript_file(transcript_path, metadata, transcript)
+        write_transcript_file(transcript_path, metadata, plain_transcript)
+        if timestamped_transcript:
+            write_timestamped_transcript_file(timestamped_transcript_path, timestamped_transcript)
     else:
         print(f"  Warning: No transcript available for this video", file=sys.stderr)
+
+    # Write heatmap peaks file if available
+    heatmap_peaks = metadata.get('heatmap_peaks')
+    if heatmap_peaks:
+        print(f"Writing heatmap peaks ({len(heatmap_peaks)} peaks)...", file=sys.stderr)
+        write_heatmap_file(heatmap_path, heatmap_peaks)
 
     # Write skeleton note
     transcript_stem = transcript_path.stem
@@ -536,6 +631,8 @@ def fetch_mode(vault_root: Path, url: str) -> dict:
         'published': metadata['published'],
         'note_path': str(note_path),
         'transcript_path': str(transcript_path),
+        'timestamped_transcript_path': str(timestamped_transcript_path) if plain_transcript else None,
+        'heatmap_path': str(heatmap_path) if heatmap_peaks else None,
         'already_exists': False,
         'transcript_length': transcript_length,
     }

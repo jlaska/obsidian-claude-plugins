@@ -11,6 +11,10 @@ created: {{created}}
 transcript: "[[{{transcript_stem}}]]"
 ---
 
+# TLDR
+
+
+
 # Summary
 
 
@@ -19,5 +23,18 @@ transcript: "[[{{transcript_stem}}]]"
 
 
 
+# Protocols & Instructions
+
+
+
+# Most Replayed
+
+
+
 # Vault Connections
+
+
+
+# Recommendations
+
 
