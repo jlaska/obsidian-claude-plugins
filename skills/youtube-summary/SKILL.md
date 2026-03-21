@@ -93,17 +93,24 @@ If `heatmap_path` is non-null, read it — this file lists the top most-replayed
 
 ### 5. Discover Vault Context
 
-Scan the vault for notes related to the video's topics. Use 3-5 targeted keyword searches based on people names, project names, and key concepts from the transcript. Exclude script folders:
+Scan the vault for notes related to the video's topics. Use 3-5 targeted keyword searches based on people names, project names, and key concepts from the transcript. Search broadly — include BOOKS/, PROJECTS/, MEETINGS/, and REFERENCES/. Exclude script folders:
 
 ```bash
-# Search for people or topic keywords across the vault
+# Search for people or topic keywords across the full vault
 grep -rl "<keyword>" "<vault_root>" \
   --include="*.md" \
   --exclude-dir=SCRIPTS --exclude-dir=DATAVIEW_SCRIPTS \
   2>/dev/null | head -20
+
+# Also search BOOKS/ and PROJECTS/ with thematic keywords
+grep -rl "<theme_keyword>" "<vault_root>/BOOKS" "<vault_root>/PROJECTS" \
+  --include="*.md" \
+  2>/dev/null | head -20
 ```
 
-Note any matching notes — they will be referenced in the Vault Connections section.
+Use thematic keywords, not just proper nouns — e.g. for a negotiation video search "empathy", "assertive", "conflict", "listening", not just "Voss". For a career video search "optionality", "fascination", "learning", not just "Gurley".
+
+Note any matching notes — they will be referenced in the Vault Connections section. Prioritize connections to BOOKS/ (personal reading notes), PROJECTS/Coaching/ (goals, words of the year), and existing REFERENCES/ notes over daily notes.
 
 ### 6. Generate All Sections, Tags, and Vault Connections
 
