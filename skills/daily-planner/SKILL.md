@@ -39,64 +39,55 @@ Read Obsidian configuration to determine:
 gog calendar events --today --json --all-pages > /tmp/calendar_events.json
 ```
 
-### 3. Process Calendar Events
+### 3. Run the Processing Script
 
-Run the Python script to create meeting notes and update daily note:
+> **CRITICAL: Run the Python script below. Do NOT manually create files or interpret the "Script Reference" section as steps to perform yourself — that section documents what the script does internally.**
 
 ```bash
-python3 process_calendar.py <vault_root> <calendar_json_path> [date]
+python3 <skill_base_dir>/process_calendar.py "<vault_root>" /tmp/calendar_events.json
 ```
 
-The script handles:
-- Auto-filtering non-meeting events
-- Matching attendees to People files
-- Creating meeting note files
-- Updating the daily note
+Replace `<skill_base_dir>` with the base directory shown at the top of this skill's context, and `<vault_root>` with the vault path discovered in Step 1.
 
-The script performs these steps automatically:
+The script fully handles filtering, attendee matching, file creation/updating, Gemini transcript fetching, and daily note generation. **Check its stdout for any errors or warnings.**
 
-#### 3.1. Auto-Filter Meetings
+---
 
-Filter out non-meeting calendar events:
+## Script Reference
 
-**Skip entirely** (not real meetings):
-- **Working location events**: `eventType: "workingLocation"`
-- **Declined meetings**: Your `responseStatus: "declined"`
-- **No attendees**: Events with only yourself or no attendees
-- **Broadcast events**: Events with `guestsCanSeeOtherGuests: false` and `guestsCanInviteOthers: false`
+> This section documents what `process_calendar.py` does internally. It is for reference only — the script performs all these steps automatically when invoked in Step 3.
 
-**Create meeting notes for**:
-- Accepted meetings with other attendees
-- Recurring team syncs
-- 1:1 meetings
-- Any event with multiple real participants
+### Filtering Logic
 
-#### 3.2. Determine File Paths
+**Skip automatically:**
+- `eventType: "workingLocation"` — office/location tracking events
+- `responseStatus: "declined"` — meetings you declined
+- `responseStatus: "tentative"` or `"needsAction"` — not yet accepted
+- No `attendees` field, or only yourself as attendee
+- `guestsCanSeeOtherGuests: false` AND `guestsCanInviteOthers: false` — broadcast events
 
-**Daily note**: `{daily_notes.folder}/{format}/YYYY-MM-DD DayOfWeek.md`
-**Meeting files**: `{meetings.folder}/{format}/YYYY-MM-DD - <Title>.md`
+**Create meeting notes for:**
+- Accepted meetings with at least one other attendee
 
-Path format from `.obsidian/daily-notes.json`:
-- Format: `YYYY/MM-MMMM/YYYY-MM-DD dddd`
-- Example daily note: `DAILY_NOTES/2026/02-February/2026-02-25 Wednesday.md`
-- Example meeting: `MEETINGS/2026/02-February/2026-02-25 - Team Sync.md`
+### File Paths
 
-#### 3.3. Match Attendees to People Files
+**Daily note**: `DAILY_NOTES/YYYY/MM-Month/YYYY-MM-DD DayOfWeek.md`
+**Meeting files**: `MEETINGS/YYYY/MM-Month/YYYY-MM-DD - Title.md`
 
-Match each calendar attendee using this cascade:
+Format derived from `.obsidian/daily-notes.json` format field (`YYYY/MM-MMMM/YYYY-MM-DD dddd`).
 
-1. **Email match** - Search PEOPLE/ files for `mail: <email>` in frontmatter
-2. **Name match** - Match by filename (case-insensitive)
-3. **Google Directory fallback** - Use `gog people search <email> --json`
-4. **Display name** - Use the calendar display name
+### Attendee Matching
 
-Output: `"[[Joshua Packer]]"` (quoted wikilink)
+For each attendee email:
+1. Search `PEOPLE/` files for `mail: <email>` in frontmatter
+2. Match by filename (case-insensitive)
+3. Fall back to `gog people search <email> --json`
+4. Use calendar display name as last resort
 
-#### 3.4. Create/Update Meeting Files
+Output: `"[[Person Name]]"` (quoted wikilink)
 
-For each meeting, create file with:
+### Meeting File Frontmatter
 
-**Frontmatter**:
 ```yaml
 ---
 attendees:
@@ -113,139 +104,55 @@ URL: <calendar event link>
 ---
 ```
 
-**Body sections** (loaded from Meeting Template):
-- Template is loaded from vault's `TEMPLATES/Meeting Template.md`
-- Falls back to plugin default if vault template doesn't exist
-- Calendar event description is injected into the `## Agenda` section
-- Templater placeholders (e.g., `<% tp.file.cursor() %>`) are automatically removed
-- A `## Notes by Gemini` section is added when a Gemini transcript attachment is present
+### Gemini Transcript Fetching
 
-#### 3.5. Update Daily Note
+When a meeting has a `gemini:` URL, the script:
+1. Extracts the Google Doc ID from the URL
+2. Runs `gog docs cat --raw --results-only <doc_id>` to fetch the raw Docs API JSON
+3. Parses it into markdown (preserving bold, headings)
+4. Extracts Summary, Details, and Suggested next steps sections
+5. Inserts a populated `## Notes by Gemini` section into the meeting file
 
-Create or update the daily note:
+This runs for all meetings (new and existing) on every invocation.
 
-**Body sections** (loaded from Daily Note Template):
-- Template is loaded from vault's `TEMPLATES/Daily Note Template.md`
-- Falls back to plugin default if vault template doesn't exist
-- Templater placeholders (e.g., `<% tp.file.creation_date() %>`) are automatically removed
-- Must include `# 📅 Meetings` section for meeting link injection
-
-Add/update `# 📅 Meetings` section with a markdown table:
+### Daily Note Meetings Table
 
 ```markdown
 # 📅 Meetings
 
 | Time | Meeting | Attendees | Summary |
 |------|---------|-----------|---------|
-| 8:00 AM | [[YYYY-MM-DD - Meeting Title 1\|Meeting Title 1]] | [[Person1]], [[Person2]] | [🤖](https://docs.google.com/document/d/...) |
-| 8:30 AM | [[YYYY-MM-DD - Meeting Title 2\|Meeting Title 2]] | [[Person3]] |  |
+| 8:00 AM | [[YYYY-MM-DD - Title\|Title]] | [[Person1]], [[Person2]] | [🤖](https://...) |
+| 8:30 AM | [[YYYY-MM-DD - Title 2\|Title 2]] | [[Person3]] |  |
 ```
 
-Meeting links use wikilink alias syntax (`[[stem\|display title]]`) to show just the title without the date prefix. Attendees are truncated after 6 with `...`. The Summary column shows a 🤖 emoji linked to the Gemini transcript Google Doc when the meeting file has a `gemini` frontmatter field; otherwise the cell is empty.
+Attendees truncated after 6 with `...`. Summary column shows 🤖 linked to Gemini doc when available.
 
-Merges new meetings with existing section on re-runs. Recognizes both table rows (`| ... [[Stem]] ... |`) and legacy bullet items (`- [[Stem]]`) when parsing existing section content.
+### Attachment Classification
 
-## Calendar Event Field Mapping
+| Title contains | Property |
+|----------------|----------|
+| "gemini" | `gemini` |
+| recording mime type (video/mp4) | `recording` |
+| "minutes", "summary", "recap" | `minutes` |
+| Google Slides mime type | `slides` |
+| everything else (Google Docs) | `agenda` |
 
-| Calendar Field | Obsidian Property | Resolution Method | Notes |
-|---------------|-------------------|-------------------|-------|
-| `summary` | File name | - | Sanitized for filesystem |
-| `attendees[].email` | `attendees` | 1. Local grep for `mail:` field in frontmatter<br/>2. Filename match<br/>3. `gog people search <email> --json` | Returns full name from Google Directory |
-| `attendees[].responseStatus` | - | - | Used for filtering (accepted/declined/tentative/needsAction) |
-| `hangoutLink` | `gmeet` | - | Google Meet URL |
-| `description` | `## Agenda` content | HTML → Markdown conversion | Converts `<a>` tags to markdown links, `<br>` to newlines, strips other HTML |
-| `attachments[].fileUrl` | `agenda`, `minutes`, `recording`, `gemini` | - | Based on title/type heuristics |
-| `start.dateTime` | `start` | - | Meeting start time |
-| `end.dateTime` | `end` | - | Meeting end time |
+### Idempotency
 
-## Attachment Classification
+On re-runs, the script:
+- Creates new meeting files only for newly-detected events
+- Adds missing frontmatter properties (never overwrites existing values)
+- Updates `## Notes by Gemini` content if it changed
+- Merges new meetings into the daily note's `# 📅 Meetings` table
 
-Google Doc attachments:
-- Title contains "notes", "agenda", "1:1", "1-1" → `agenda` property
-- Title contains "minutes", "summary", "recap" → `minutes` property
-- Default → `agenda` property
-
-Google Meet artifacts:
-- Gemini meeting transcript → `gemini` property
-- Meeting recording → `recording` property
-
-## File Naming
-
-**Meeting title sanitization**:
-- Replace `/`, `:`, `|` with ` - ` or remove
-- Trim whitespace
-- Example: "James : Deepika 1:1" → "James Deepika 1-1"
-
-## Meeting Filtering Logic
-
-Events are automatically filtered based on these criteria:
-
-### Skip Automatically
-
-**Event Type**:
-- `eventType: "workingLocation"` - Office/location tracking events
-
-**Attendance Status**:
-- Only meetings with `responseStatus: "accepted"` get meeting notes
-- Skip: `declined`, `tentative`, `needsAction` (not responded)
-
-**No Real Attendees**:
-- No `attendees` field
-- Only attendee is yourself (no `non_self_attendees`)
-
-**Broadcast/Informational Events**:
-- `guestsCanSeeOtherGuests: false` AND `guestsCanInviteOthers: false`
-- Indicates one-way broadcast (e.g., company-wide events, office hours)
-
-### Create Meeting Notes
-
-All other events with:
-- Multiple participants (you + at least one other person)
-- Accepted status (`responseStatus: "accepted"`)
-- Real meeting interaction expected
+**Never overwrites:** user content in `## Agenda`, `## Actions`, or any manually-edited frontmatter fields.
 
 ## Directory Structure
 
 ```
-DAILY_NOTES/
-└── YYYY/
-    └── MM-Month/
-        └── YYYY-MM-DD DayOfWeek.md
-
-MEETINGS/
-└── YYYY/
-    └── MM-Month/
-        └── YYYY-MM-DD - Title.md
-
-PEOPLE/
-└── First Last.md
+DAILY_NOTES/YYYY/MM-Month/YYYY-MM-DD DayOfWeek.md
+MEETINGS/YYYY/MM-Month/YYYY-MM-DD - Title.md
+PEOPLE/First Last.md
+TEMPLATES/
 ```
-
-## Templates Reference
-
-**Daily Note Template**: `TEMPLATES/Daily Note Template.md`
-**Meeting Template**: `TEMPLATES/Meeting Template.md`
-**People Template**: `TEMPLATES/People Template.md`
-
-## Update Behavior (Idempotency)
-
-When run multiple times during the day:
-
-**New meetings detected:**
-- Create new meeting files
-- Add wikilinks to daily note's `# 📅 Meetings` section
-
-**Existing meetings with updated metadata:**
-- Update `gmeet` property if changed
-- Update `agenda`/`minutes` properties with new attachments
-- Append new description content to `## Agenda` section (don't overwrite user notes)
-
-**New attachments on existing meetings:**
-- Add new Google Docs links (notes, agenda)
-- Add `gemini:` frontmatter and `## Notes by Gemini` section when Gemini transcript becomes available
-- Add recording links when available
-
-**What NOT to overwrite:**
-- User-added content in `## Agenda` section
-- User-added content in `## Actions` section
-- Any manual edits to frontmatter (only add missing properties)
