@@ -19,7 +19,9 @@
         "./skills/daily-planner",
         "./skills/obsidian-vault-setup",
         "./skills/people-enrichment",
-        "./skills/youtube-summary"
+        "./skills/youtube-summary",
+        "./skills/obsidian-cli",
+        "./skills/obsidian-vault-intelligence"
       ]
     }
   ]

@@ -93,24 +93,49 @@ If `heatmap_path` is non-null, read it — this file lists the top most-replayed
 
 ### 5. Discover Vault Context
 
-Scan the vault for notes related to the video's topics. Use 3-5 targeted keyword searches based on people names, project names, and key concepts from the transcript. Search broadly — include BOOKS/, PROJECTS/, MEETINGS/, and REFERENCES/. Exclude script folders:
+Scan the vault for notes related to the video's topics using the best available
+method. Use thematic keywords, not just proper nouns — e.g. for a negotiation video
+search "empathy", "conflict", "listening", not just "Voss".
+
+#### Preferred: Obsidian indexed search (when CLI is available)
 
 ```bash
-# Search for people or topic keywords across the full vault
+# Check if obsidian CLI is available
+obsidian version &>/dev/null && CLI_AVAILABLE=true || CLI_AVAILABLE=false
+
+# Option A: Dataview API (richest results — tags, aliases, backlinks)
+obsidian eval code="
+  const dv = app.plugins.plugins['dataview']?.api;
+  if (!dv) return '[]';
+  const themes = [<comma-separated-theme-keywords>];
+  return JSON.stringify(dv.pages().where(p => {
+    const text = [p.file.name, ...(p.tags||[])].join(' ').toLowerCase();
+    return themes.some(t => text.includes(t));
+  }).sort(p => p.file.mtime, 'desc').slice(0,15).map(p => p.file.path));
+" 2>/dev/null
+
+# Option B: Obsidian indexed search (fallback if Dataview unavailable)
+obsidian search query="<theme_keywords>" format=json limit=20 2>/dev/null \
+  | python3 -c "import sys,json; [print(r.get('path','')) for r in json.load(sys.stdin)]"
+```
+
+#### Fallback: grep (when Obsidian is not running)
+
+```bash
+# Search BOOKS/ and PROJECTS/ — most likely to have thematic connections
+grep -rl "<keyword>" "<vault_root>/BOOKS" "<vault_root>/PROJECTS" \
+  --include="*.md" 2>/dev/null | head -15
+
+# Broader vault search
 grep -rl "<keyword>" "<vault_root>" \
   --include="*.md" \
   --exclude-dir=SCRIPTS --exclude-dir=DATAVIEW_SCRIPTS \
   2>/dev/null | head -20
-
-# Also search BOOKS/ and PROJECTS/ with thematic keywords
-grep -rl "<theme_keyword>" "<vault_root>/BOOKS" "<vault_root>/PROJECTS" \
-  --include="*.md" \
-  2>/dev/null | head -20
 ```
 
-Use thematic keywords, not just proper nouns — e.g. for a negotiation video search "empathy", "assertive", "conflict", "listening", not just "Voss". For a career video search "optionality", "fascination", "learning", not just "Gurley".
-
-Note any matching notes — they will be referenced in the Vault Connections section. Prioritize connections to BOOKS/ (personal reading notes), PROJECTS/Coaching/ (goals, words of the year), and existing REFERENCES/ notes over daily notes.
+Note any matching notes — they will be referenced in the Vault Connections section.
+Prioritize connections to BOOKS/ (personal reading notes), PROJECTS/Coaching/ (goals,
+words of the year), and existing REFERENCES/ notes over daily notes.
 
 ### 6. Generate All Sections, Tags, and Vault Connections
 

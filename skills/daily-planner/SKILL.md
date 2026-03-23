@@ -108,7 +108,7 @@ start: YYYY-MM-DDTHH:MM:SS-TZ
 end: YYYY-MM-DDTHH:MM:SS-TZ
 gmeet: <hangout_link>
 agenda: <google doc URL>
-transcript: <gemini transcript URL>
+gemini: <gemini transcript URL>
 URL: <calendar event link>
 ---
 ```
@@ -116,8 +116,9 @@ URL: <calendar event link>
 **Body sections** (loaded from Meeting Template):
 - Template is loaded from vault's `TEMPLATES/Meeting Template.md`
 - Falls back to plugin default if vault template doesn't exist
-- Calendar event description is injected into the `# Agenda` section
+- Calendar event description is injected into the `## Agenda` section
 - Templater placeholders (e.g., `<% tp.file.cursor() %>`) are automatically removed
+- A `## Notes by Gemini` section is added when a Gemini transcript attachment is present
 
 #### 3.5. Update Daily Note
 
@@ -153,7 +154,7 @@ Merges new meetings with existing section on re-runs. Recognizes both table rows
 | `attendees[].responseStatus` | - | - | Used for filtering (accepted/declined/tentative/needsAction) |
 | `hangoutLink` | `gmeet` | - | Google Meet URL |
 | `description` | `## Agenda` content | HTML → Markdown conversion | Converts `<a>` tags to markdown links, `<br>` to newlines, strips other HTML |
-| `attachments[].fileUrl` | `agenda`, `minutes`, `recording`, `transcript` | - | Based on title/type heuristics |
+| `attachments[].fileUrl` | `agenda`, `minutes`, `recording`, `gemini` | - | Based on title/type heuristics |
 | `start.dateTime` | `start` | - | Meeting start time |
 | `end.dateTime` | `end` | - | Meeting end time |
 
@@ -165,7 +166,7 @@ Google Doc attachments:
 - Default → `agenda` property
 
 Google Meet artifacts:
-- Gemini meeting transcript → `transcript` property
+- Gemini meeting transcript → `gemini` property
 - Meeting recording → `recording` property
 
 ## File Naming
@@ -241,7 +242,7 @@ When run multiple times during the day:
 
 **New attachments on existing meetings:**
 - Add new Google Docs links (notes, agenda)
-- Add Gemini transcript links when available
+- Add `gemini:` frontmatter and `## Notes by Gemini` section when Gemini transcript becomes available
 - Add recording links when available
 
 **What NOT to overwrite:**
