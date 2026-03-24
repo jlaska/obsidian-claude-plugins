@@ -22,6 +22,7 @@ Invoke `/daily-planner` at the start of your day to:
 - Enrich meeting files with Google Meet links, descriptions, and document attachments
 - Match calendar attendees to People notes
 - Link all meetings from the daily note
+- Generate a Meeting Preparation section with previous meeting summaries and suggested topics
 
 ## Workflow
 
@@ -50,6 +51,80 @@ python3 <skill_base_dir>/process_calendar.py "<vault_root>" /tmp/calendar_events
 Replace `<skill_base_dir>` with the base directory shown at the top of this skill's context, and `<vault_root>` with the vault path discovered in Step 1.
 
 The script fully handles filtering, attendee matching, file creation/updating, Gemini transcript fetching, and daily note generation. **Check its stdout for any errors or warnings.**
+
+### 4. Generate Meeting Preparation
+
+After the script completes, build a `# Meeting Preparation` section for the daily note.
+
+#### 4a. Parse the daily note meetings table
+
+Read the daily note created in Step 3. Parse the `# 📅 Meetings` table to extract for each row:
+- Meeting wikilink stem and display title (e.g., `2026-03-24 - Victor - James` / `Victor - James`)
+- Time (e.g., `8:30 AM`)
+- Attendees list
+
+#### 4b. For each meeting, find previous meetings
+
+Read the meeting file's frontmatter (`MEETINGS/YYYY/MM-Month/<stem>.md`) to get the `attendees:` list.
+
+**Determine meeting type:**
+- 1 attendee → **1:1 meeting**
+- 2+ attendees → **group meeting**
+
+**Find previous meetings:**
+
+*1:1 meetings:* Extract the attendee name (strip `[[` and `]]`). Use Grep to find all meeting files in `MEETINGS/` that contain `"[[<Person Name>]]"` in their frontmatter. Exclude today's file. Sort by filename descending (date order), take the last 2-3.
+
+*Group/recurring meetings:* Strip the date prefix from the filename to get the series title (e.g., `2026-03-24 - team-fleet-staff` → `team-fleet-staff`). Use Glob to find `MEETINGS/**/????-??-?? - <Series Title>.md`. Exclude today's file. Sort descending, take last 2-3.
+
+#### 4c. Read and summarize previous meetings
+
+For each previous meeting file found, read it and extract a 1-sentence TL;DR (~15 words) using this priority:
+1. `### Summary` content under `## Notes by Gemini` (preferred)
+2. `## Actions` bullet items (fallback)
+3. `## Agenda` content (last resort)
+4. "No summary available" if none found
+
+Format the link as `[[YYYY-MM-DD - Title\|Month DD, YYYY]]` for clean display.
+
+#### 4d. Gather Parking Lot items (1:1 meetings only)
+
+For each 1:1 meeting, read `PEOPLE/<Person Name>.md` and extract bullet items from the `# Parking Lot` section. Skip if the file doesn't exist or has no Parking Lot section.
+
+#### 4e. Generate suggested topics
+
+Derive 2-3 suggested topics per meeting from:
+1. Open action items (`- [ ]` tasks or "will" commitments) from previous meetings
+2. Topics needing follow-up from previous summaries
+3. Parking Lot items from the PEOPLE file (1:1s only)
+
+If no previous meetings exist: use "Introductions and agenda setting" as the only suggestion.
+
+#### 4f. Write the section to the daily note
+
+Build the full `# Meeting Preparation` section with one foldable callout per meeting.
+
+**Format per meeting:**
+
+```
+> [!tip]- [[YYYY-MM-DD - Title\|Display Title]] (HH:MM AM/PM)
+> **Previous meetings:**
+> - [[YYYY-MM-DD - Title\|Month DD, YYYY]] - One-sentence summary
+> - [[YYYY-MM-DD - Title\|Month DD, YYYY]] - One-sentence summary
+>
+> **Suggested topics:**
+> - Follow up on [specific item] from [date]
+> - [Parking lot item]
+> - [Ongoing topic from previous discussions]
+```
+
+`[!tip]-` makes the callout foldable (collapsed by default). Every line inside must be prefixed with a blockquote marker.
+
+**Placement:**
+- If `# Meeting Preparation` already exists in the daily note: replace the entire section (from `# Meeting Preparation` to the next `---` or top-level heading)
+- If it does not exist: insert it immediately after the `# 📅 Meetings` section (after the table, before the next `---` separator)
+
+Use the `Edit` tool to insert/replace — never rewrite the entire daily note file.
 
 ---
 

@@ -703,9 +703,6 @@ def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Opti
     frontmatter_lines.append('tags:')
     frontmatter_lines.append('  - Meetings')
     frontmatter_lines.append(f'created: {created_dt}')
-    subject = event.get('summary', '').strip()
-    if subject:
-        frontmatter_lines.append(f'subject: {subject}')
     if start_dt:
         frontmatter_lines.append(f'start: {start_dt}')
     if end_dt:
@@ -764,9 +761,6 @@ def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Opti
 
         # Build dict of new attachment properties from this run
         new_props = {}
-        subject = event.get('summary', '').strip()
-        if subject:
-            new_props['subject'] = subject
         if gemini_links:
             new_props['gemini'] = gemini_links[0]
         if agenda_links:
