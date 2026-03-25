@@ -59,7 +59,7 @@ After the script completes, build a `# Meeting Preparation` section for the dail
 #### 4a. Parse the daily note and classify meetings by time
 
 Read the daily note created in Step 3. Parse the `# 📅 Meetings` table to extract for each row:
-- Meeting wikilink stem and display title (e.g., `2026-03-24 - Victor - James` / `Victor - James`)
+- Meeting wikilink stem and display title (e.g., `2026-03-24 - Alex - Sam` / `Alex - Sam`)
 - Time (e.g., `8:30 AM`)
 - Attendees list
 
@@ -89,11 +89,11 @@ obsidian search query='[recurringEventId:<base-id>]' path="MEETINGS/" limit=5
 
 Obsidian tokenizes on underscores, so the base ID matches files that store the full value (with `_R` suffix) and files that store the stripped value — returning all instances of the same calendar series regardless of title variations.
 
-**Tier 2 — Non-recurring meetings** (no `recurringEventId`): Use the `file:` operator to match by filename. This catches naming variations (e.g., `Jonathan Newton and James`, `Jonathan - James`) and is case-insensitive.
+**Tier 2 — Non-recurring meetings** (no `recurringEventId`): Use the `file:` operator to match by filename. This catches naming variations (e.g., `Alex Smith and Sam`, `Alex - Sam`) and is case-insensitive.
 
-*1:1 meetings:* Search for the attendee's first name and "James":
+*1:1 meetings:* Search for the attendee's first name and the vault owner's first name:
 ```bash
-obsidian search query='file:"<Person FirstName>" file:"James"' path="MEETINGS/" limit=5
+obsidian search query='file:"<Person FirstName>" file:"<VaultOwnerFirstName>"' path="MEETINGS/" limit=5
 ```
 
 *Group meetings:* Search for the series title words:
