@@ -69,6 +69,8 @@ For each meeting, read its `start:` frontmatter field from the meeting file (`ME
 
 On the **first run** (no `# Meeting Preparation` section exists yet), generate callouts for **all** meetings regardless of start time.
 
+> **Important — no short-circuiting:** For every upcoming meeting, always fully re-execute steps 4b–4e from scratch: re-read the meeting frontmatter, re-search for previous meetings, re-read those meeting files, and re-read the PEOPLE Parking Lot. Do **not** inspect the existing callout content to decide whether to skip — the existing callout may be stale (e.g., the Parking Lot was updated since the last run). The only exception is past meetings, which are never touched.
+
 #### 4b. For each meeting, find previous meetings
 
 Read the meeting file's frontmatter (`MEETINGS/YYYY/MM-Month/<stem>.md`) to get the `attendees:` list.
