@@ -721,6 +721,11 @@ def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Opti
         frontmatter_lines.append(f'slides: {slides_links[0]}')
     if other_links:
         frontmatter_lines.append(f'attachments: {other_links[0]}')
+    recurring_event_id = event.get('recurringEventId', '').strip()
+    if recurring_event_id:
+        # Strip the _R<timestamp> suffix (added when a series is edited) to keep the base series ID
+        recurring_event_id = recurring_event_id.split('_R')[0]
+        frontmatter_lines.append(f'recurringEventId: {recurring_event_id}')
     if html_link:
         frontmatter_lines.append(f'URL: {html_link}')
     frontmatter_lines.append('---')
@@ -773,6 +778,9 @@ def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Opti
             new_props['slides'] = slides_links[0]
         if other_links:
             new_props['attachments'] = other_links[0]
+        recurring_event_id = event.get('recurringEventId', '').strip()
+        if recurring_event_id:
+            new_props['recurringEventId'] = recurring_event_id.split('_R')[0]
 
         # Add any missing frontmatter properties (never overwrite existing values)
         if new_props:

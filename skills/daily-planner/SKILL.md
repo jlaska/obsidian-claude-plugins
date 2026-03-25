@@ -73,19 +73,29 @@ Read the meeting file's frontmatter (`MEETINGS/YYYY/MM-Month/<stem>.md`) to get 
 
 **Find previous meetings using `obsidian search` (indexed, fast):**
 
-For **both 1:1 and group meetings**, strip the date prefix from today's meeting filename to get the series title, then search by title. This finds previous instances of the *same recurring meeting*, not just any meeting with that attendee.
+Use a two-tier strategy based on whether the meeting file has a `recurringEventId` frontmatter field.
+
+**Tier 1 — Recurring meetings** (have `recurringEventId`): Use the series base ID for a precise match. Strip the `_R<timestamp>` suffix if present (e.g., `abc123_R20251125T133000` → `abc123`), then query:
 
 ```bash
-obsidian search query='"<Series Title>"' path="MEETINGS/" limit=5
+obsidian search query='[recurringEventId:<base-id>]' path="MEETINGS/" limit=5
 ```
 
-Examples:
-- `2026-03-24 - Victor - James` → search `"Victor - James"`
-- `2026-03-24 - Jesse - James` → search `"Jesse - James"`
-- `2026-03-24 - team-fleet-staff` → search `"team-fleet-staff"`
-- `2026-03-24 - James - Deepika 1 - 1` → search `"James - Deepika 1 - 1" OR "Deepika 1:1" OR "Deepika"`
+Obsidian tokenizes on underscores, so the base ID matches files that store the full value (with `_R` suffix) and files that store the stripped value — returning all instances of the same calendar series regardless of title variations.
 
-For 1:1s where the naming convention varies (e.g., `Victor James`, `Victor - James`, `1 - 1 James - Victor`), try 2-3 name-based variations in the query. Exclude today's file from results. Take the last 2-3 by filename (dates sort chronologically).
+**Tier 2 — Non-recurring meetings** (no `recurringEventId`): Use the `file:` operator to match by filename. This catches naming variations (e.g., `Jonathan Newton and James`, `Jonathan - James`) and is case-insensitive.
+
+*1:1 meetings:* Search for the attendee's first name and "James":
+```bash
+obsidian search query='file:"<Person FirstName>" file:"James"' path="MEETINGS/" limit=5
+```
+
+*Group meetings:* Search for the series title words:
+```bash
+obsidian search query='file:"<Series Title>"' path="MEETINGS/" limit=5
+```
+
+Exclude today's file from all results. Take the last 2-3 by filename (dates sort chronologically).
 
 > **Note:** These commands require Obsidian to be running. They use the indexed search — no filesystem scanning needed.
 
@@ -187,6 +197,7 @@ end: YYYY-MM-DDTHH:MM:SS-TZ
 gmeet: <hangout_link>
 agenda: <google doc URL>
 gemini: <gemini transcript URL>
+recurringEventId: <google calendar series id>  # only present for recurring events
 URL: <calendar event link>
 ---
 ```
