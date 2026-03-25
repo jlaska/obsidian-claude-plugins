@@ -73,21 +73,19 @@ Read the meeting file's frontmatter (`MEETINGS/YYYY/MM-Month/<stem>.md`) to get 
 
 **Find previous meetings using `obsidian search` (indexed, fast):**
 
-*1:1 meetings:* Extract the attendee name (strip `[[` and `]]`). Query Obsidian's search index:
-
-```bash
-obsidian search query='[attendees:<Person Name>]' path="MEETINGS/" limit=5
-```
-
-Exclude today's files from results. Take the last 2-3 by filename (dates sort chronologically).
-
-*Group/recurring meetings:* Strip the date prefix from the filename to get the series title (e.g., `2026-03-24 - team-fleet-staff` → `team-fleet-staff`). Search by title:
+For **both 1:1 and group meetings**, strip the date prefix from today's meeting filename to get the series title, then search by title. This finds previous instances of the *same recurring meeting*, not just any meeting with that attendee.
 
 ```bash
 obsidian search query='"<Series Title>"' path="MEETINGS/" limit=5
 ```
 
-Exclude today's file. Take last 2-3.
+Examples:
+- `2026-03-24 - Victor - James` → search `"Victor - James"`
+- `2026-03-24 - Jesse - James` → search `"Jesse - James"`
+- `2026-03-24 - team-fleet-staff` → search `"team-fleet-staff"`
+- `2026-03-24 - James - Deepika 1 - 1` → search `"James - Deepika 1 - 1" OR "Deepika 1:1" OR "Deepika"`
+
+For 1:1s where the naming convention varies (e.g., `Victor James`, `Victor - James`, `1 - 1 James - Victor`), try 2-3 name-based variations in the query. Exclude today's file from results. Take the last 2-3 by filename (dates sort chronologically).
 
 > **Note:** These commands require Obsidian to be running. They use the indexed search — no filesystem scanning needed.
 
