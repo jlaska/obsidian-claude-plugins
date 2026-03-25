@@ -71,11 +71,25 @@ Read the meeting file's frontmatter (`MEETINGS/YYYY/MM-Month/<stem>.md`) to get 
 - 1 attendee → **1:1 meeting**
 - 2+ attendees → **group meeting**
 
-**Find previous meetings:**
+**Find previous meetings using `obsidian search` (indexed, fast):**
 
-*1:1 meetings:* Extract the attendee name (strip `[[` and `]]`). Use Grep to find all meeting files in `MEETINGS/` that contain `"[[<Person Name>]]"` in their frontmatter. Exclude today's file. Sort by filename descending (date order), take the last 2-3.
+*1:1 meetings:* Extract the attendee name (strip `[[` and `]]`). Query Obsidian's search index:
 
-*Group/recurring meetings:* Strip the date prefix from the filename to get the series title (e.g., `2026-03-24 - team-fleet-staff` → `team-fleet-staff`). Use Glob to find `MEETINGS/**/????-??-?? - <Series Title>.md`. Exclude today's file. Sort descending, take last 2-3.
+```bash
+obsidian search query='[attendees:<Person Name>]' path="MEETINGS/" limit=5
+```
+
+Exclude today's files from results. Take the last 2-3 by filename (dates sort chronologically).
+
+*Group/recurring meetings:* Strip the date prefix from the filename to get the series title (e.g., `2026-03-24 - team-fleet-staff` → `team-fleet-staff`). Search by title:
+
+```bash
+obsidian search query='"<Series Title>"' path="MEETINGS/" limit=5
+```
+
+Exclude today's file. Take last 2-3.
+
+> **Note:** These commands require Obsidian to be running. They use the indexed search — no filesystem scanning needed.
 
 #### 4c. Read and summarize previous meetings
 
