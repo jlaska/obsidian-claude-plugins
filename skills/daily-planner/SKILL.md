@@ -56,12 +56,18 @@ The script fully handles filtering, attendee matching, file creation/updating, G
 
 After the script completes, build a `# Meeting Preparation` section for the daily note.
 
-#### 4a. Parse the daily note meetings table
+#### 4a. Parse the daily note and classify meetings by time
 
 Read the daily note created in Step 3. Parse the `# 📅 Meetings` table to extract for each row:
 - Meeting wikilink stem and display title (e.g., `2026-03-24 - Victor - James` / `Victor - James`)
 - Time (e.g., `8:30 AM`)
 - Attendees list
+
+For each meeting, read its `start:` frontmatter field from the meeting file (`MEETINGS/YYYY/MM-Month/<stem>.md`) and compare to the current time:
+- **Upcoming** (`start` is in the future) → generate or regenerate its callout
+- **Past** (`start` is in the past) → preserve its existing callout exactly; skip all research and writing for it
+
+On the **first run** (no `# Meeting Preparation` section exists yet), generate callouts for **all** meetings regardless of start time.
 
 #### 4b. For each meeting, find previous meetings
 
@@ -142,11 +148,17 @@ Build the full `# Meeting Preparation` section with one foldable callout per mee
 
 `[!tip]-` makes the callout foldable (collapsed by default). Every line inside must be prefixed with a blockquote marker.
 
-**Placement:**
-- If `# Meeting Preparation` already exists in the daily note: replace the entire section (from `# Meeting Preparation` to the next `---` or top-level heading)
-- If it does not exist: insert it immediately after the `# 📅 Meetings` section (after the table, before the next `---` separator)
+**Placement and update rules:**
 
-Use the `Edit` tool to insert/replace — never rewrite the entire daily note file.
+**First run** (no `# Meeting Preparation` section exists): Generate callouts for all meetings and insert the full section immediately after the `# 📅 Meetings` table, before the next `---` separator.
+
+**Re-run** (section already exists): Use surgical `Edit` operations — do **not** replace the entire section. Instead:
+1. For each **upcoming** meeting: find and replace its existing callout (identified by matching the meeting wikilink in the `[!tip]-` header), or append a new callout if it doesn't have one yet.
+2. For each **past** meeting: leave its existing callout completely untouched — do not read, modify, or regenerate it.
+3. If a meeting has been removed from the calendar (no longer in the meetings table): remove its callout.
+4. Preserve the ordering of callouts to match the meetings table (by start time).
+
+Use the `Edit` tool for all writes — never rewrite the entire daily note file.
 
 ---
 
