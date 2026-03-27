@@ -1028,8 +1028,17 @@ def main():
     meeting_files = []
     skipped_count = 0
 
+    target_date_str = target_date.strftime('%Y-%m-%d')
+
     for event in events:
         summary = event.get('summary', 'Untitled')
+
+        # Skip events not on the target date
+        start = event.get('start', {})
+        event_date_str = (start.get('dateTime') or start.get('date') or '')[:10]
+        if event_date_str != target_date_str:
+            skipped_count += 1
+            continue
 
         # Skip non-meetings
         if should_skip_event(event):
