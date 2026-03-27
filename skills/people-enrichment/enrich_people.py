@@ -80,7 +80,7 @@ class PersonEnricher:
 
             # Parse output - format is:
             # RESOURCE                      NAME         EMAIL
-            # people/107802665765765929344  Ademar Reis  areis@redhat.com
+            # people/<id>                   Jane Doe     jdoe@redhat.com
             lines = result.stdout.strip().split('\n')
             if len(lines) < 2:
                 return None

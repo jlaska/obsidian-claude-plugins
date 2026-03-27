@@ -90,10 +90,10 @@ The enrichment follows this cascade:
 
 | Field | Source | Description | Example |
 |-------|--------|-------------|---------|
-| `title` | LDAP | Job title | "Director, Engineering" |
-| `rhatLocation` | LDAP | Red Hat office location | "RH - Lowell" or "Remote US MA" |
-| `mail` | LDAP | Email address | "areis@redhat.com" |
-| `mobile` | LDAP | Mobile phone number | "+19782278014" |
+| `title` | LDAP | Job title | "Senior Software Engineer" |
+| `rhatLocation` | LDAP | Red Hat office location | "RH - Raleigh" or "Remote US NC" |
+| `mail` | LDAP | Email address | "jdoe@redhat.com" |
+| `mobile` | LDAP | Mobile phone number | "+19195551234" |
 
 ## Original Fields Preserved
 
@@ -110,8 +110,8 @@ All original frontmatter fields are preserved:
 ```yaml
 ---
 company: Red Hat
-location: Boston
-email: areis@redhat.com
+location: Raleigh
+email: jdoe@redhat.com
 aliases:
 tags:
   - People
@@ -122,14 +122,14 @@ tags:
 ```yaml
 ---
 company: Red Hat
-location: Boston
+location: Raleigh
 aliases:
 tags:
   - People
-title: Director, Engineering
-rhatLocation: RH - Lowell
-mail: areis@redhat.com
-mobile: '+19782278014'
+title: Senior Software Engineer
+rhatLocation: RH - Raleigh
+mail: jdoe@redhat.com
+mobile: '+19195551234'
 ---
 ```
 

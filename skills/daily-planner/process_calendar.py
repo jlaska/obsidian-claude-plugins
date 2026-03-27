@@ -19,6 +19,25 @@ from pathlib import Path
 from typing import List, Dict, Optional, Set, Tuple
 
 
+def discover_user_email() -> Optional[str]:
+    """Discover the current user's email via gog whoami."""
+    try:
+        result = subprocess.run(
+            ['gog', 'whoami', '--json'],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode != 0:
+            return None
+        data = json.loads(result.stdout)
+        emails = data.get('person', {}).get('emailAddresses', [])
+        for entry in emails:
+            if entry.get('metadata', {}).get('primary'):
+                return entry.get('value')
+        return emails[0].get('value') if emails else None
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+        return None
+
+
 def load_calendar_events(json_path: str) -> List[Dict]:
     """Load calendar events from JSON file."""
     with open(json_path, 'r') as f:
@@ -26,7 +45,7 @@ def load_calendar_events(json_path: str) -> List[Dict]:
     return data.get('events', [])
 
 
-def should_skip_event(event: Dict, user_email: str = "jlaska@redhat.com") -> bool:
+def should_skip_event(event: Dict, user_email: str = None) -> bool:
     """
     Determine if a calendar event should be skipped (not a real meeting).
 
@@ -1019,6 +1038,12 @@ def main():
     calendar_json_path = sys.argv[2]
     target_date = datetime.strptime(sys.argv[3], '%Y-%m-%d') if len(sys.argv) > 3 else datetime.now()
 
+    user_email = discover_user_email()
+    if not user_email:
+        print("Error: Could not determine user email via 'gog whoami --json'")
+        sys.exit(1)
+    print(f"User email: {user_email}")
+
     # Load calendar events
     print(f"Loading calendar events from {calendar_json_path}...")
     events = load_calendar_events(calendar_json_path)
@@ -1041,7 +1066,7 @@ def main():
             continue
 
         # Skip non-meetings
-        if should_skip_event(event):
+        if should_skip_event(event, user_email):
             skipped_count += 1
             continue
 

@@ -37,3 +37,6 @@ ENV/
 .DS_Store
 Thumbs.db
 .claudelint-cache/
+
+# Runtime output
+not_found_people.txt
