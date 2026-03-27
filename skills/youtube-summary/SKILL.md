@@ -183,7 +183,7 @@ Write the LLM-generated content to a temp file:
 }
 ```
 
-Write to `/tmp/yt_summary_<video_id>.json`.
+Write to `$HOME/.cache/obsidian-claude-plugins/yt_summary_<video_id>.json` (create the directory with `mkdir -p "$HOME/.cache/obsidian-claude-plugins"` if needed).
 
 Notes:
 - `vault_connections` may be omitted if no meaningful connections were found
@@ -194,7 +194,9 @@ Notes:
 Run the script in save-summary mode:
 
 ```bash
-python3 skills/youtube-summary/fetch_youtube.py "<vault_root>" "<youtube_url>" --save-summary /tmp/yt_summary_<video_id>.json
+CACHE_DIR="$HOME/.cache/obsidian-claude-plugins"
+mkdir -p "$CACHE_DIR"
+python3 skills/youtube-summary/fetch_youtube.py "<vault_root>" "<youtube_url>" --save-summary "$CACHE_DIR/yt_summary_<video_id>.json"
 ```
 
 The script injects the summary, takeaways, tags, and vault connections into the note's frontmatter and body sections.

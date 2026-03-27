@@ -37,7 +37,9 @@ Read Obsidian configuration to determine:
 ### 2. Fetch Calendar Data
 
 ```bash
-gog calendar events --today --json --all-pages > /tmp/calendar_events.json
+CACHE_DIR="$HOME/.cache/obsidian-claude-plugins"
+mkdir -p "$CACHE_DIR"
+gog calendar events --today --json --all-pages > "$CACHE_DIR/calendar_events.json"
 ```
 
 ### 3. Run the Processing Script
@@ -45,7 +47,8 @@ gog calendar events --today --json --all-pages > /tmp/calendar_events.json
 > **CRITICAL: Run the Python script below. Do NOT manually create files or interpret the "Script Reference" section as steps to perform yourself — that section documents what the script does internally.**
 
 ```bash
-python3 <skill_base_dir>/process_calendar.py "<vault_root>" /tmp/calendar_events.json
+CACHE_DIR="$HOME/.cache/obsidian-claude-plugins"
+python3 <skill_base_dir>/process_calendar.py "<vault_root>" "$CACHE_DIR/calendar_events.json"
 ```
 
 Replace `<skill_base_dir>` with the base directory shown at the top of this skill's context, and `<vault_root>` with the vault path discovered in Step 1.

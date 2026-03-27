@@ -149,7 +149,7 @@ People may not be found if:
 - They're not Red Hat employees
 - Network/authentication issues
 
-For these cases, manually verify and update the person file if needed. The script generates a `not_found_people.txt` file for review.
+For these cases, manually verify and update the person file if needed. The script prints not-found people to stdout for review.
 
 ## Implementation Details
 

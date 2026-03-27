@@ -923,7 +923,7 @@ Take a screenshot of the Obsidian window.
 
 ```bash
 obsidian dev:screenshot
-obsidian dev:screenshot output="/tmp/obsidian-screen.png"
+obsidian dev:screenshot output="$HOME/.cache/obsidian-claude-plugins/obsidian-screen.png"
 ```
 
 ### `dev:console`
