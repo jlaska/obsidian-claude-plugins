@@ -672,6 +672,46 @@ def update_frontmatter_with_missing_properties(content: str, new_props: Dict[str
     return '---' + new_frontmatter + '---' + content[end + 3:]
 
 
+def update_frontmatter_values(content: str, updates: Dict[str, str]) -> str:
+    """Update existing frontmatter property values in place.
+
+    Only modifies keys that already exist in the frontmatter.
+    Does not add new keys — use update_frontmatter_with_missing_properties for that.
+
+    Args:
+        content: Full file content including frontmatter
+        updates: Dict of {key: new_value} pairs to update
+
+    Returns:
+        Updated file content
+    """
+    if not content.startswith('---'):
+        return content
+
+    end = content.find('---', 3)
+    if end == -1:
+        return content
+
+    frontmatter_text = content[3:end]
+    lines = frontmatter_text.split('\n')
+    changed = False
+
+    for i, line in enumerate(lines):
+        if line and not line.startswith(' ') and ':' in line:
+            key = line.split(':', 1)[0].strip()
+            if key in updates:
+                new_line = f'{key}: {updates[key]}'
+                if lines[i] != new_line:
+                    lines[i] = new_line
+                    changed = True
+
+    if not changed:
+        return content
+
+    new_frontmatter = '\n'.join(lines)
+    return '---' + new_frontmatter + '---' + content[end + 3:]
+
+
 def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Optional[Tuple[str, Path]]:
     """
     Create or update a meeting note file.
@@ -783,6 +823,21 @@ def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Opti
     if meeting_file.exists():
         print(f"  ⚠️  Meeting file already exists: {meeting_file.name}")
 
+        existing_content = meeting_file.read_text()
+
+        # Sync start/end times from calendar (authoritative source)
+        time_updates = {}
+        if start_dt:
+            time_updates['start'] = start_dt
+        if end_dt:
+            time_updates['end'] = end_dt
+        if time_updates:
+            updated_content = update_frontmatter_values(existing_content, time_updates)
+            if updated_content != existing_content:
+                meeting_file.write_text(updated_content)
+                print(f"  ✓ Updated meeting times from calendar")
+                existing_content = updated_content
+
         # Build dict of new attachment properties from this run
         new_props = {}
         if gemini_links:
@@ -803,7 +858,6 @@ def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Opti
 
         # Add any missing frontmatter properties (never overwrite existing values)
         if new_props:
-            existing_content = meeting_file.read_text()
             updated_content = update_frontmatter_with_missing_properties(existing_content, new_props)
             if updated_content != existing_content:
                 meeting_file.write_text(updated_content)
