@@ -160,7 +160,7 @@ Build the full `# Meeting Preparation` section with one foldable callout per mee
 **Re-run** (section already exists): Use surgical `Edit` operations — do **not** replace the entire section. Instead:
 1. For each **upcoming** meeting: find and replace its existing callout (identified by matching the meeting wikilink in the `[!tip]-` header), or append a new callout if it doesn't have one yet.
 2. For each **past** meeting: leave its existing callout completely untouched — do not read, modify, or regenerate it.
-3. If a meeting has been removed from the calendar (no longer in the meetings table): remove its callout.
+3. If a meeting has been removed from the calendar (the script removes its row from the meetings table automatically): remove its callout from Meeting Preparation as well.
 4. Preserve the ordering of callouts to match the meetings table (by start time).
 
 Use the `Edit` tool for all writes — never rewrite the entire daily note file.
@@ -175,6 +175,7 @@ Use the `Edit` tool for all writes — never rewrite the entire daily note file.
 
 **Skip automatically:**
 - `eventType: "workingLocation"` — office/location tracking events
+- `status: "cancelled"` — cancelled or deleted calendar events
 - `responseStatus: "declined"` — meetings you declined
 - `responseStatus: "tentative"` or `"needsAction"` — not yet accepted
 - No `attendees` field, or only yourself as attendee
@@ -260,8 +261,19 @@ On re-runs, the script:
 - Adds missing frontmatter properties (never overwrites existing values)
 - Updates `## Notes by Gemini` content if it changed
 - Merges new meetings into the daily note's `# 📅 Meetings` table
+- **Removes stale rows** from the meetings table for cancelled/removed meetings (events no longer in the calendar)
+- **Reports stale meeting files** in stdout (does not auto-delete them)
 
 **Never overwrites:** user content in `## Agenda`, `## Actions`, or any manually-edited frontmatter fields.
+
+### Cancelled Meeting File Cleanup (Step 5)
+
+After the script completes, check stdout for lines beginning with `⚠️  Cancelled meeting files to review:`. For each listed file, prompt the user before taking any action:
+
+- **"no user modifications"** → ask: *"[Meeting title] was cancelled. The meeting file has no notes — delete it?"* → delete the file on confirmation
+- **"has user content in ## Actions"** → ask: *"[Meeting title] was cancelled but has notes in ## Actions. Keep the file or delete it?"* → act on the user's response
+
+**Never delete a meeting file without explicit user confirmation.**
 
 ## Directory Structure
 

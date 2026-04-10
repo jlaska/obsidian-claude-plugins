@@ -59,6 +59,10 @@ def should_skip_event(event: Dict, user_email: str = None) -> bool:
     if event.get('eventType') == 'workingLocation':
         return True
 
+    # Skip cancelled events
+    if event.get('status') == 'cancelled':
+        return True
+
     # Skip if user hasn't accepted (only create notes for accepted meetings)
     attendees = event.get('attendees', [])
     for attendee in attendees:
@@ -948,6 +952,35 @@ def format_attendees(attendees: list, max_count: int = 6) -> str:
     return ', '.join(escaped[:max_count]) + ', ...'
 
 
+def meeting_file_has_user_content(meeting_file: Path) -> bool:
+    """Check if a meeting file has user-added content worth preserving.
+
+    Returns True if the ## Actions section has any content. Ignores ## Agenda
+    (gets auto-injected calendar descriptions) and ## Notes by Gemini (auto-fetched).
+    """
+    if not meeting_file.exists():
+        return False
+
+    content = meeting_file.read_text()
+
+    # Strip frontmatter
+    body = content
+    if content.startswith('---'):
+        end = content.find('---', 3)
+        if end != -1:
+            body = content[end + 3:]
+
+    actions_match = re.search(
+        r'^#+ Actions\s*\n(.*?)(?=\n---|\n#|\Z)',
+        body, re.MULTILINE | re.DOTALL
+    )
+    if actions_match:
+        if actions_match.group(1).strip():
+            return True
+
+    return False
+
+
 def build_meetings_table(meeting_rows: list) -> str:
     """Build a markdown table from sorted meeting rows.
 
@@ -971,13 +1004,22 @@ def build_meetings_table(meeting_rows: list) -> str:
     return '\n'.join(lines)
 
 
-def update_daily_note(meeting_files: List[Tuple[str, Path]], vault_root: Path, date_format: str, target_date: datetime):
+def update_daily_note(meeting_files: List[Tuple[str, Path]], vault_root: Path, date_format: str,
+                      target_date: datetime, valid_stems: Optional[Set[str]] = None) -> Set[str]:
     """
     Update the daily note with a meeting table.
 
     Adds/updates # 📅 Meetings section with a markdown table showing time, linked
     meeting name, and attendees. Recognizes both table rows and legacy bullet items
     when merging with existing section content.
+
+    Args:
+        valid_stems: When provided, the authoritative set of meeting stems from the
+            current calendar data. Existing stems NOT in this set are removed from
+            the table (stale/cancelled meetings). When None, falls back to additive merge.
+
+    Returns:
+        Set of stems that were removed from the table (stale/cancelled meetings).
     """
     # Build daily note path
     year = target_date.strftime('%Y')
@@ -1045,8 +1087,15 @@ def update_daily_note(meeting_files: List[Tuple[str, Path]], vault_root: Path, d
             elif not in_content:
                 before_table.append(line)
 
-        # Merge stems and build sorted rows with frontmatter
-        all_stems = existing_stems | new_meeting_stems
+        # Determine the authoritative set of stems for the table
+        if valid_stems is not None:
+            # Re-run with calendar data: remove stale rows, keep valid ones
+            all_stems = valid_stems
+        else:
+            # No calendar data provided: additive merge (preserves existing rows)
+            all_stems = existing_stems | new_meeting_stems
+        stale_stems = existing_stems - all_stems
+
         meeting_rows = []
         for stem in all_stems:
             matches = list(meetings_dir.rglob(f"{stem}.md"))
@@ -1067,7 +1116,8 @@ def update_daily_note(meeting_files: List[Tuple[str, Path]], vault_root: Path, d
         new_section = '\n'.join(new_section_lines)
         content = content[:start_idx] + new_section + content[end_idx:]
     else:
-        # Append new section
+        # Append new section (first run — no stale stems possible)
+        stale_stems = set()
         meeting_rows = []
         for _, meeting_file in meeting_files:
             fm = read_meeting_frontmatter(meeting_file)
@@ -1080,6 +1130,7 @@ def update_daily_note(meeting_files: List[Tuple[str, Path]], vault_root: Path, d
     # Write updated daily note
     daily_note_file.write_text(content)
     print(f"\n✓ Updated daily note: {daily_note_file.name}")
+    return stale_stems
 
 
 def main():
@@ -1105,6 +1156,7 @@ def main():
 
     # Filter and process events
     meeting_files = []
+    valid_stems: Set[str] = set()
     skipped_count = 0
 
     target_date_str = target_date.strftime('%Y-%m-%d')
@@ -1124,6 +1176,13 @@ def main():
             skipped_count += 1
             continue
 
+        # Track expected stem for stale detection (even if create_meeting_note fails)
+        try:
+            expected_path = get_meeting_file_path(event, vault_root, "YYYY/MM-MMMM/YYYY-MM-DD dddd")
+            valid_stems.add(expected_path.stem)
+        except ValueError:
+            pass
+
         # Create meeting note
         print(f"\nProcessing: {summary}")
         try:
@@ -1135,9 +1194,37 @@ def main():
 
     print(f"\n\nProcessed {len(meeting_files)} meetings (skipped {skipped_count} non-meetings)")
 
-    # Update daily note
-    if meeting_files:
-        update_daily_note(meeting_files, vault_root, "YYYY/MM-MMMM/YYYY-MM-DD dddd", target_date)
+    # Update daily note — run even when meeting_files is empty so stale rows are cleaned up
+    year = target_date.strftime('%Y')
+    month_num = target_date.strftime('%m')
+    month_name = target_date.strftime('%B')
+    date_part = target_date.strftime('%Y-%m-%d')
+    day_name = target_date.strftime('%A')
+    daily_notes_dir = vault_root / "DAILY_NOTES" / year / f"{month_num}-{month_name}"
+    daily_note_file = daily_notes_dir / f"{date_part} {day_name}.md"
+
+    if meeting_files or daily_note_file.exists():
+        # Safety guard: if calendar returned zero events and daily note already has meetings,
+        # skip cleanup to avoid wiping the table on a calendar API outage
+        safe_valid_stems: Optional[Set[str]] = valid_stems
+        if len(events) == 0 and daily_note_file.exists():
+            print("  ⚠️  No calendar events returned — skipping stale meeting cleanup (API outage guard)")
+            safe_valid_stems = None
+        stale_stems = update_daily_note(meeting_files, vault_root, "YYYY/MM-MMMM/YYYY-MM-DD dddd",
+                                        target_date, valid_stems=safe_valid_stems)
+
+        # Report stale meeting files for user review (do not auto-delete)
+        if stale_stems:
+            meetings_dir = vault_root / "MEETINGS"
+            print("\n⚠️  Cancelled meeting files to review:")
+            for stem in sorted(stale_stems):
+                matches = list(meetings_dir.rglob(f"{stem}.md"))
+                if matches:
+                    has_content = meeting_file_has_user_content(matches[0])
+                    status = "has user content in ## Actions" if has_content else "no user modifications"
+                    print(f"  {matches[0].relative_to(vault_root)} ({status})")
+    else:
+        stale_stems = set()
 
     # Second pass: Update meeting files with Gemini notes
     # (transcripts may be added after initial calendar fetch)
