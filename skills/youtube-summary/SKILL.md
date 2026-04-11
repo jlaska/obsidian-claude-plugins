@@ -12,7 +12,7 @@ allowed-tools:
 
 # YouTube Summary
 
-Fetches a YouTube video transcript, generates a concise summary with key takeaways and tag suggestions, and saves a structured note to the Obsidian vault's `REFERENCES/` folder with the raw transcript in `ATTACHMENTS/`.
+Fetches a YouTube video transcript, generates a concise summary with key takeaways and tag suggestions, and saves a structured note to the Obsidian vault's `REFERENCES/` folder with the raw transcript in `TRANSCRIPTS/`.
 
 ## When to Use
 
@@ -65,9 +65,9 @@ The script outputs JSON to stdout:
   "duration": "3:32",
   "published": "2009-10-25",
   "note_path": "/vault/REFERENCES/2009/10-October/2009-10-25 - Video Title.md",
-  "transcript_path": "/vault/ATTACHMENTS/Transcripts/2009-10-25 - Video Title - transcript.md",
-  "timestamped_transcript_path": "/vault/ATTACHMENTS/Transcripts/2009-10-25 - Video Title - transcript-timestamped.md",
-  "heatmap_path": "/vault/ATTACHMENTS/Transcripts/2009-10-25 - Video Title - heatmap.md",
+  "transcript_path": "/vault/TRANSCRIPTS/2009-10-25 - Video Title - transcript.md",
+  "timestamped_transcript_path": "/vault/TRANSCRIPTS/2009-10-25 - Video Title - transcript-timestamped.md",
+  "heatmap_path": "/vault/TRANSCRIPTS/2009-10-25 - Video Title - heatmap.md",
   "already_exists": false,
   "transcript_length": 4821
 }
@@ -276,11 +276,10 @@ REFERENCES/
       └── MM-Month/
           └── YYYY-MM-DD - Title.md
 
-ATTACHMENTS/
-  └── Transcripts/
-      ├── YYYY-MM-DD - Title - transcript.md           (plain text, readable)
-      ├── YYYY-MM-DD - Title - transcript-timestamped.md  (LLM input, [MM:SS] prefixed)
-      └── YYYY-MM-DD - Title - heatmap.md              (LLM input, peak segments; omitted if no heatmap)
+TRANSCRIPTS/
+  ├── YYYY-MM-DD - Title - transcript.md           (plain text, readable)
+  ├── YYYY-MM-DD - Title - transcript-timestamped.md  (LLM input, [MM:SS] prefixed)
+  └── YYYY-MM-DD - Title - heatmap.md              (LLM input, peak segments; omitted if no heatmap)
 ```
 
 ## Error Handling
@@ -293,5 +292,5 @@ ATTACHMENTS/
 ## Related Skills
 
 - **obsidian-vault-discovery**: Used to discover vault configuration
-- **obsidian-vault-setup**: Creates REFERENCES/ and ATTACHMENTS/ directory structure
+- **obsidian-vault-setup**: Creates REFERENCES/ and TRANSCRIPTS/ directory structure
 - **daily-planner**: Similar pattern for creating structured notes from external data

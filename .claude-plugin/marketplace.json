@@ -21,7 +21,8 @@
         "./skills/people-enrichment",
         "./skills/youtube-summary",
         "./skills/obsidian-cli",
-        "./skills/obsidian-vault-intelligence"
+        "./skills/obsidian-vault-intelligence",
+        "./skills/meeting-summarizer"
       ]
     }
   ]

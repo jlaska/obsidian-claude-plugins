@@ -8,7 +8,7 @@ Modes:
     - Validates URL, extracts video ID
     - Fetches metadata via yt-dlp
     - Fetches transcript via youtube-transcript-api
-    - Creates transcript file in ATTACHMENTS/
+    - Creates transcript file in TRANSCRIPTS/
     - Creates skeleton note in REFERENCES/
     - Outputs JSON summary to stdout
 
@@ -235,21 +235,21 @@ def get_note_path(vault_root: Path, safe_title: str, dt: datetime) -> Path:
 
 
 def get_transcript_path(vault_root: Path, safe_title: str, dt: datetime) -> Path:
-    """Return full path for ATTACHMENTS transcript."""
+    """Return full path for TRANSCRIPTS transcript."""
     date_str = dt.strftime('%Y-%m-%d')
-    return vault_root / 'ATTACHMENTS' / 'Transcripts' / f"{date_str} - {safe_title} - transcript.md"
+    return vault_root / 'TRANSCRIPTS' / f"{date_str} - {safe_title} - transcript.md"
 
 
 def get_timestamped_transcript_path(vault_root: Path, safe_title: str, dt: datetime) -> Path:
-    """Return full path for ATTACHMENTS timestamped transcript (LLM input only)."""
+    """Return full path for TRANSCRIPTS timestamped transcript (LLM input only)."""
     date_str = dt.strftime('%Y-%m-%d')
-    return vault_root / 'ATTACHMENTS' / 'Transcripts' / f"{date_str} - {safe_title} - transcript-timestamped.md"
+    return vault_root / 'TRANSCRIPTS' / f"{date_str} - {safe_title} - transcript-timestamped.md"
 
 
 def get_heatmap_path(vault_root: Path, safe_title: str, dt: datetime) -> Path:
-    """Return full path for ATTACHMENTS heatmap peaks file (LLM input only)."""
+    """Return full path for TRANSCRIPTS heatmap peaks file (LLM input only)."""
     date_str = dt.strftime('%Y-%m-%d')
-    return vault_root / 'ATTACHMENTS' / 'Transcripts' / f"{date_str} - {safe_title} - heatmap.md"
+    return vault_root / 'TRANSCRIPTS' / f"{date_str} - {safe_title} - heatmap.md"
 
 
 def format_duration(seconds: int) -> str:
@@ -311,7 +311,7 @@ def render_template(template: str, variables: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def write_transcript_file(path: Path, metadata: dict, transcript: str) -> None:
-    """Write transcript markdown file to ATTACHMENTS/."""
+    """Write transcript markdown file to TRANSCRIPTS/."""
     path.parent.mkdir(parents=True, exist_ok=True)
     created_dt = datetime.now().strftime('%Y-%m-%d %H:%M')
 
@@ -337,13 +337,13 @@ def write_transcript_file(path: Path, metadata: dict, transcript: str) -> None:
 
 
 def write_timestamped_transcript_file(path: Path, timestamped_text: str) -> None:
-    """Write timestamped transcript file to ATTACHMENTS/ for LLM use during summarization."""
+    """Write timestamped transcript file to TRANSCRIPTS/ for LLM use during summarization."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(timestamped_text + '\n')
 
 
 def write_heatmap_file(path: Path, heatmap_peaks: list) -> None:
-    """Write heatmap peaks file to ATTACHMENTS/ for LLM use during summarization.
+    """Write heatmap peaks file to TRANSCRIPTS/ for LLM use during summarization.
 
     Format: [MM:SS]-[MM:SS] intensity: 0.85
     Sorted by start_time (already guaranteed by fetch_metadata).
