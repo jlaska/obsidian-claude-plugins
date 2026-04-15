@@ -226,6 +226,245 @@ def fetch_gemini_doc_content(doc_id: str) -> Optional[str]:
     return None
 
 
+def _parse_transcript_elements(elements: list, timestamp: str) -> List[str]:
+    """Parse a Google Docs transcript paragraph into diarized lines.
+
+    Google Meet stores speaker names and utterances in alternating textRun elements:
+        textRun: 'Luke Bainbridge:'   ← speaker (no leading space, ends with ':')
+        textRun: ' There you go.\x0b' ← utterance (leading space, \x0b = soft return)
+        textRun: 'RDU-15W102:'        ← next speaker
+        textRun: ' Oh, hi.\x0b'       ← next utterance
+
+    Each \x0b (Google Docs soft return) marks a turn boundary within an utterance.
+    """
+    lines = []
+    current_speaker: Optional[str] = None
+    utterance_parts: List[str] = []
+
+    for elem in elements:
+        tr = elem.get('textRun', {})
+        if not tr:
+            continue
+        raw = tr.get('content', '')
+        raw = re.sub(r'[\ue000-\uf8ff]', '', raw)  # Strip PUA chars
+
+        # Speaker name textRuns: no leading space, content ends with ':' (possibly + newline)
+        stripped = raw.rstrip('\x0b\n').rstrip()
+        if stripped.endswith(':') and not raw.startswith(' ') and not raw.startswith('\xa0'):
+            # Flush previous speaker's utterance
+            if current_speaker is not None and utterance_parts:
+                utterance = ' '.join(''.join(utterance_parts).split()).strip()
+                if utterance:
+                    lines.append(f'[{timestamp}] {current_speaker} {utterance}')
+            current_speaker = stripped  # e.g. "Luke Bainbridge:"
+            utterance_parts = []
+        else:
+            # Utterance text — \x0b soft returns become spaces, \xa0 becomes space
+            text = raw.replace('\x0b', ' ').replace('\xa0', ' ')
+            utterance_parts.append(text)
+
+    # Flush last speaker
+    if current_speaker is not None and utterance_parts:
+        utterance = ' '.join(''.join(utterance_parts).split()).strip()
+        if utterance:
+            lines.append(f'[{timestamp}] {current_speaker} {utterance}')
+
+    return lines
+
+
+def fetch_and_parse_transcript_tab(doc_id: str) -> Optional[str]:
+    """Fetch and parse the Transcript tab from a Gemini Google Doc.
+
+    Returns diarized plain text with one speaker turn per line, formatted as:
+        [HH:MM:SS] Speaker Name: utterance text
+
+    Args:
+        doc_id: Google Docs document ID
+
+    Returns:
+        Diarized transcript text, or None if the tab doesn't exist or fetch fails
+    """
+    try:
+        result = subprocess.run(
+            ['gog', 'docs', 'cat', '--tab', 'Transcript', '--raw', '--results-only', doc_id],
+            capture_output=True, text=True, timeout=30
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+        doc = json.loads(result.stdout)
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception) as e:
+        print(f"  ⚠️  Failed to fetch Transcript tab for {doc_id}: {e}")
+        return None
+
+    # Content lives in the matching tab, not the document-level body
+    body = []
+    for tab in doc.get('tabs', []):
+        props = tab.get('tabProperties', {})
+        if props.get('title', '').lower() == 'transcript':
+            body = tab.get('documentTab', {}).get('body', {}).get('content', [])
+            break
+
+    if not body:
+        return None
+
+    lines = []
+    current_timestamp = '00:00:00'
+    in_header = True  # Skip title/metadata at top of doc
+
+    for elem in body:
+        para = elem.get('paragraph', {})
+        if not para:
+            continue
+
+        style = para.get('paragraphStyle', {}).get('namedStyleType', '')
+        elements = para.get('elements', [])
+
+        # Collect plain text to check for headings and footer markers
+        text_parts = []
+        for e in elements:
+            tr = e.get('textRun', {})
+            if tr:
+                text_parts.append(tr.get('content', ''))
+        full_text = ''.join(text_parts).strip()
+
+        if not full_text:
+            continue
+
+        # H3 headings are timestamps (e.g. "00:00:00") — mark end of header
+        if style == 'HEADING_3':
+            if re.match(r'^\d{2}:\d{2}:\d{2}$', full_text):
+                current_timestamp = full_text
+                in_header = False
+            continue
+
+        # Skip header metadata (title, Invited, Attachments, Meeting records)
+        if in_header:
+            continue
+
+        # Skip footer boilerplate
+        if re.match(r'Transcription ended after', full_text, re.IGNORECASE):
+            break
+        if re.match(r'This editable transcript', full_text, re.IGNORECASE):
+            break
+
+        # Parse paragraph at the textRun level for accurate speaker diarization
+        speaker_lines = _parse_transcript_elements(elements, current_timestamp)
+        lines.extend(speaker_lines)
+
+    if not lines:
+        return None
+
+    return '\n'.join(lines)
+
+
+def write_meeting_transcript(
+    vault_root: Path,
+    meeting_file: Path,
+    transcript_content: str,
+    gemini_url: str,
+) -> Optional[Path]:
+    """Write a diarized meeting transcript to the TRANSCRIPTS/ folder.
+
+    File name is derived from the meeting file name:
+        MEETINGS/.../YYYY-MM-DD - Title.md  →  TRANSCRIPTS/YYYY-MM-DD - Title - transcript.md
+
+    Args:
+        vault_root: Root of the Obsidian vault
+        meeting_file: Path to the meeting .md file
+        transcript_content: Diarized transcript text
+        gemini_url: Source Gemini doc URL (stored in frontmatter)
+
+    Returns:
+        Path to the written transcript file, or None if already exists
+    """
+    stem = meeting_file.stem  # e.g. "2026-04-15 - My Meeting"
+    transcript_stem = f'{stem} - transcript'
+    transcript_path = vault_root / 'TRANSCRIPTS' / f'{transcript_stem}.md'
+
+    if transcript_path.exists():
+        return None  # Already captured — idempotent
+
+    transcript_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Extract date from stem for frontmatter
+    date_match = re.match(r'^(\d{4}-\d{2}-\d{2})', stem)
+    created = date_match.group(1) if date_match else ''
+
+    frontmatter_lines = [
+        '---',
+        'tags:',
+        '  - Attachments',
+        '  - Transcript',
+    ]
+    if created:
+        frontmatter_lines.append(f'created: {created}')
+    if gemini_url:
+        frontmatter_lines.append(f'gemini: {gemini_url}')
+    frontmatter_lines.extend(['---', '', transcript_content, ''])
+
+    transcript_path.write_text('\n'.join(frontmatter_lines))
+    return transcript_path
+
+
+def capture_meeting_transcript(meeting_file: Path, vault_root: Path) -> bool:
+    """Fetch and save the Transcript tab from a meeting's Gemini doc.
+
+    Reads the gemini: URL from the meeting file frontmatter, fetches the
+    Transcript tab, writes it to TRANSCRIPTS/, and adds a transcript: wikilink
+    to the meeting file frontmatter.
+
+    Args:
+        meeting_file: Path to the meeting .md file
+        vault_root: Root of the Obsidian vault
+
+    Returns:
+        True if transcript was captured, False if skipped or failed
+    """
+    if not meeting_file.exists():
+        return False
+
+    content = meeting_file.read_text()
+
+    # Skip if transcript already linked
+    if re.search(r'^transcript:', content, re.MULTILINE):
+        return False
+
+    # Extract gemini URL from frontmatter
+    gemini_url = None
+    for line in content.split('\n'):
+        if line.startswith('gemini:'):
+            gemini_url = line.split('gemini:')[1].strip()
+            break
+
+    if not gemini_url:
+        return False
+
+    doc_id = extract_doc_id_from_url(gemini_url)
+    if not doc_id:
+        return False
+
+    print(f"  📝 Fetching Gemini transcript tab...")
+    transcript_content = fetch_and_parse_transcript_tab(doc_id)
+    if not transcript_content:
+        print(f"  ⚠️  No Transcript tab found in Gemini doc")
+        return False
+
+    transcript_file = write_meeting_transcript(vault_root, meeting_file, transcript_content, gemini_url)
+    if transcript_file is None:
+        return False  # Already existed
+
+    # Add transcript: wikilink to meeting file frontmatter
+    transcript_stem = transcript_file.stem
+    updated = update_frontmatter_with_missing_properties(
+        content,
+        {'transcript': f'"[[{transcript_stem}]]"'}
+    )
+    meeting_file.write_text(updated)
+
+    print(f"  ✓ Transcript saved: {transcript_file.name}")
+    return True
+
+
 def strip_gemini_boilerplate(content: str) -> str:
     """Strip trailing boilerplate text from Gemini doc content."""
     boilerplate_patterns = [
@@ -1226,12 +1465,13 @@ def main():
     else:
         stale_stems = set()
 
-    # Second pass: Update meeting files with Gemini notes
+    # Second pass: Update meeting files with Gemini notes and capture transcripts
     # (transcripts may be added after initial calendar fetch)
     if meeting_files:
         print("\nChecking for Gemini transcripts...")
         for _, meeting_file in meeting_files:
             update_meeting_with_gemini_notes(meeting_file)
+            capture_meeting_transcript(meeting_file, vault_root)
 
     print("\n✅ Daily planner complete!")
 
