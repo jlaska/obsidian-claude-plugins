@@ -126,12 +126,14 @@ For each 1:1 meeting, read `PEOPLE/<Person Name>.md` and extract bullet items fr
 
 #### 4e. Generate suggested topics
 
-Derive 2-3 suggested topics per meeting from:
+Derive suggested topics per meeting from these sources:
 1. Open action items (`- [ ]` tasks or "will" commitments) from previous meetings
 2. Topics needing follow-up from previous summaries
 3. Parking Lot items from the PEOPLE file (1:1s only)
 
-If no previous meetings exist: use "Introductions and agenda setting" as the only suggestion.
+Every Parking Lot item must be represented in Suggested topics — summarize or combine related items, but do not drop any. Tag each parking-lot-derived topic with "(Parking Lot)" at the end so the user can see its origin.
+
+If no previous meetings and no parking lot items exist: use "Introductions and agenda setting" as the only suggestion.
 
 #### 4f. Write the section to the daily note
 
@@ -147,7 +149,7 @@ Build the full `# Meeting Preparation` section with one foldable callout per mee
 >
 > **Suggested topics:**
 > - Follow up on [specific item] from [date]
-> - [Parking lot item]
+> - [Topic derived from Parking Lot item] (Parking Lot)
 > - [Ongoing topic from previous discussions]
 ```
 

@@ -366,7 +366,7 @@ def write_meeting_transcript(
     """Write a diarized meeting transcript to the TRANSCRIPTS/ folder.
 
     File name is derived from the meeting file name:
-        MEETINGS/.../YYYY-MM-DD - Title.md  →  TRANSCRIPTS/YYYY-MM-DD - Title - transcript.md
+        MEETINGS/YYYY/MM-Month/YYYY-MM-DD - Title.md  →  TRANSCRIPTS/YYYY-MM-DD - Title - transcript.md
 
     Args:
         vault_root: Root of the Obsidian vault
