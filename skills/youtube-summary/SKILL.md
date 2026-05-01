@@ -8,6 +8,7 @@ allowed-tools:
   - Grep
   - Bash
   - Write
+  - Edit
 ---
 
 # YouTube Summary
@@ -201,12 +202,53 @@ python3 skills/youtube-summary/fetch_youtube.py "<vault_root>" "<youtube_url>" -
 
 The script injects the summary, takeaways, tags, and vault connections into the note's frontmatter and body sections.
 
-### 9. Confirm to User
+### 9. Add Daily Note Breadcrumb
+
+Add a breadcrumb to today's daily note so there's a record of the video being summarized.
+
+**Construct today's daily note path** using `vault_root` and today's date:
+
+```
+<vault_root>/DAILY_NOTES/YYYY/MM-Month/YYYY-MM-DD DayOfWeek.md
+```
+
+For example: `DAILY_NOTES/2026/05-May/2026-05-01 Friday.md`
+
+**If the daily note does not exist**, create it:
+
+```bash
+mkdir -p "<vault_root>/DAILY_NOTES/YYYY/MM-Month"
+```
+
+Then use the Write tool to create the file. The note must contain these sections in order:
+
+1. YAML frontmatter with `created: YYYY-MM-DD HH:MM` (today's timestamp)
+2. `# 📓 Journal` with `## Morning thoughts` and `## Evening reflection` subsections
+3. `# ✅ Tasks` with `## Today`, `## This week`, and `## No due date` subsections (each containing a fenced `tasks` Dataview query block)
+4. `# 📅 Meetings` (empty body)
+5. `# 📝 Notes` (empty body)
+
+This matches the structure of `TEMPLATES/Daily Note Template.md` in the vault.
+
+**Check for duplicates** before appending — search the daily note content for the reference note's filename stem (everything after the last `/` in `note_path`, without the `.md` extension). If found, skip the append.
+
+**Append the breadcrumb** using the Edit tool to add it to the `# 📝 Notes` section. Since Notes is the last section, append to the end of the file:
+
+```
+- 🎬 [[RELATIVE_NOTE_PATH|TITLE]] — CHANNEL (DURATION)
+```
+
+Where:
+- `RELATIVE_NOTE_PATH` is `note_path` with the `vault_root/` prefix stripped (e.g., `REFERENCES/2009/10-October/2009-10-25 - Video Title`)
+- `TITLE`, `CHANNEL`, `DURATION` come from the Step 2 JSON output
+
+### 10. Confirm to User
 
 Report completion:
 - Note location (relative to vault root)
 - Transcript location (relative to vault root)
 - First few lines of the generated summary
+- Daily note breadcrumb: added (or "already present" if duplicate was detected)
 
 ## Note Format
 
