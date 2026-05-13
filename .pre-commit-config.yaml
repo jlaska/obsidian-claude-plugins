@@ -1,10 +1,10 @@
 repos:
-  # Claudelint (stbenjam) - Plugin structure validation
+  # Skillsaw (stbenjam) - Plugin structure validation
   - repo: local
     hooks:
-      - id: claudelint-structure
-        name: claudelint (structure)
-        entry: uvx claudelint --strict
+      - id: skillsaw-structure
+        name: skillsaw (structure)
+        entry: bash -c 'OUTPUT=$(uvx skillsaw 2>&1); echo "$OUTPUT"; echo "$OUTPUT" | sed "s/\x1b\[[0-9;]*m//g" | grep -q "^[[:space:]]*Errors:[[:space:]]*0"'
         language: system
         pass_filenames: false
         always_run: true
