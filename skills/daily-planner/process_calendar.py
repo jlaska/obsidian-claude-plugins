@@ -19,23 +19,107 @@ from pathlib import Path
 from typing import List, Dict, Optional, Set, Tuple
 
 
-def discover_user_email() -> Optional[str]:
-    """Discover the current user's email via gog whoami."""
+def discover_all_accounts() -> List[Dict[str, str]]:
+    """Discover all gog-authenticated accounts that have calendar access."""
     try:
         result = subprocess.run(
-            ['gog', 'whoami', '--json'],
+            ['gog', 'auth', 'list', '--plain'],
             capture_output=True, text=True, timeout=10
         )
         if result.returncode != 0:
+            return []
+        accounts = []
+        for line in result.stdout.strip().splitlines():
+            parts = line.split('\t')
+            if len(parts) < 3:
+                continue
+            email, client, scopes = parts[0], parts[1], parts[2]
+            if 'calendar' in scopes:
+                accounts.append({'email': email, 'client': client})
+        return accounts
+    except (subprocess.TimeoutExpired, OSError):
+        return []
+
+
+def fetch_account_events(email: str, client: str, cache_dir: Path, date_flag: str = '--today') -> Optional[Path]:
+    """Fetch calendar events for one gog account, saving to cache_dir."""
+    sanitized = re.sub(r'[@.]', '_', email)
+    output_path = cache_dir / f'calendar_events_{sanitized}.json'
+    cmd = ['gog', 'calendar', 'events', '--account', email, date_flag, '--json', '--all-pages']
+    if client and client not in ('', 'default'):
+        cmd.extend(['--client', client])
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            print(f"  ⚠️  Failed to fetch events for {email}: {result.stderr.strip()}")
+            print(f"      Run: gog auth add {email}" + (f" --client {client}" if client and client != 'default' else ""))
             return None
-        data = json.loads(result.stdout)
-        emails = data.get('person', {}).get('emailAddresses', [])
-        for entry in emails:
-            if entry.get('metadata', {}).get('primary'):
-                return entry.get('value')
-        return emails[0].get('value') if emails else None
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+        json.loads(result.stdout)  # validate JSON
+        output_path.write_text(result.stdout)
+        return output_path
+    except subprocess.TimeoutExpired:
+        print(f"  ⚠️  Timeout fetching events for {email} — skipping")
         return None
+    except json.JSONDecodeError:
+        print(f"  ⚠️  Invalid JSON from {email} — token may be expired")
+        return None
+
+
+def load_and_merge_events(json_paths: List[Path]) -> List[Dict]:
+    """Load and merge events from multiple JSON files, deduplicating by iCalUID."""
+    seen: Dict[str, bool] = {}
+    merged: List[Dict] = []
+    for path in json_paths:
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            for event in data.get('events', []):
+                key = event.get('iCalUID') or f"{event.get('summary','')}|{event.get('start',{}).get('dateTime','')}"
+                if key not in seen:
+                    seen[key] = True
+                    merged.append(event)
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"  ⚠️  Could not load {path}: {e}")
+    return merged
+
+
+def discover_user_emails(accounts: Optional[List[Dict[str, str]]] = None) -> Set[str]:
+    """Discover all user email addresses across authenticated gog accounts."""
+    def _whoami(extra_args: List[str]) -> Optional[str]:
+        try:
+            result = subprocess.run(
+                ['gog', 'whoami', '--json'] + extra_args,
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode != 0:
+                return None
+            data = json.loads(result.stdout)
+            emails = data.get('person', {}).get('emailAddresses', [])
+            for entry in emails:
+                if entry.get('metadata', {}).get('primary'):
+                    return entry.get('value')
+            return emails[0].get('value') if emails else None
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+            return None
+
+    if not accounts:
+        # Fall back to single-account discovery
+        email = _whoami([])
+        return {email} if email else set()
+
+    user_emails: Set[str] = set()
+    for account in accounts:
+        args = ['--account', account['email']]
+        client = account.get('client', '')
+        if client and client not in ('', 'default'):
+            args.extend(['--client', client])
+        email = _whoami(args)
+        if email:
+            user_emails.add(email)
+        else:
+            # Couldn't resolve via whoami — trust the auth list email directly
+            user_emails.add(account['email'])
+    return user_emails
 
 
 def load_calendar_events(json_path: str) -> List[Dict]:
@@ -45,7 +129,7 @@ def load_calendar_events(json_path: str) -> List[Dict]:
     return data.get('events', [])
 
 
-def should_skip_event(event: Dict, user_email: str = None) -> bool:
+def should_skip_event(event: Dict, user_emails: Optional[Set[str]] = None) -> bool:
     """
     Determine if a calendar event should be skipped (not a real meeting).
 
@@ -55,6 +139,9 @@ def should_skip_event(event: Dict, user_email: str = None) -> bool:
     - No attendees or only yourself
     - Broadcast event (can't see/invite others)
     """
+    if user_emails is None:
+        user_emails = set()
+
     # Skip working location events
     if event.get('eventType') == 'workingLocation':
         return True
@@ -66,7 +153,7 @@ def should_skip_event(event: Dict, user_email: str = None) -> bool:
     # Skip if user hasn't accepted (only create notes for accepted meetings)
     attendees = event.get('attendees', [])
     for attendee in attendees:
-        if attendee.get('email') == user_email:
+        if attendee.get('email') in user_emails:
             if attendee.get('responseStatus') != 'accepted':
                 return True  # Skip - only create notes for accepted meetings
 
@@ -74,7 +161,7 @@ def should_skip_event(event: Dict, user_email: str = None) -> bool:
     if not attendees:
         return True
 
-    non_self_attendees = [a for a in attendees if a.get('email') != user_email]
+    non_self_attendees = [a for a in attendees if a.get('email') not in user_emails]
     if not non_self_attendees:
         return True
 
@@ -955,19 +1042,23 @@ def update_frontmatter_values(content: str, updates: Dict[str, str]) -> str:
     return '---' + new_frontmatter + '---' + content[end + 3:]
 
 
-def create_meeting_note(event: Dict, vault_root: Path, date_format: str) -> Optional[Tuple[str, Path]]:
+def create_meeting_note(event: Dict, vault_root: Path, date_format: str,
+                        user_emails: Optional[Set[str]] = None) -> Optional[Tuple[str, Path]]:
     """
     Create or update a meeting note file.
 
     Returns: Tuple of (start_time, Path) to created/updated file, or None if skipped
     """
+    if user_emails is None:
+        user_emails = set()
+
     # Get file path
     meeting_file = get_meeting_file_path(event, vault_root, date_format)
 
     # Match attendees to people
     attendees = event.get('attendees', [])
-    # Filter out calendar owner (marked with self: true by Google Calendar API)
-    non_self_attendees = [a for a in attendees if not a.get('self')]
+    # Filter out calendar owner (self flag from API, or matches any known user email)
+    non_self_attendees = [a for a in attendees if not a.get('self') and a.get('email') not in user_emails]
     attendee_links = []
     for attendee in non_self_attendees:
         email = attendee.get('email', '')
@@ -1375,22 +1466,52 @@ def update_daily_note(meeting_files: List[Tuple[str, Path]], vault_root: Path, d
 def main():
     """Main entry point."""
     if len(sys.argv) < 3:
-        print("Usage: python3 process_calendar.py <vault_root> <calendar_json_path> [date]")
+        print("Usage: python3 process_calendar.py <vault_root> <calendar_json_or_cache_dir> [date]")
         sys.exit(1)
 
     vault_root = Path(sys.argv[1])
-    calendar_json_path = sys.argv[2]
+    second_arg = sys.argv[2]
     target_date = datetime.strptime(sys.argv[3], '%Y-%m-%d') if len(sys.argv) > 3 else datetime.now()
 
-    user_email = discover_user_email()
-    if not user_email:
-        print("Error: Could not determine user email via 'gog whoami --json'")
-        sys.exit(1)
-    print(f"User email: {user_email}")
+    # Determine mode: legacy single-JSON or new cache-dir multi-account mode
+    second_path = Path(second_arg)
+    legacy_mode = second_arg.endswith('.json') or (second_path.exists() and second_path.is_file())
 
-    # Load calendar events
-    print(f"Loading calendar events from {calendar_json_path}...")
-    events = load_calendar_events(calendar_json_path)
+    if legacy_mode:
+        # Backward-compatible: single JSON file provided directly
+        user_emails = discover_user_emails()
+        print(f"User emails: {user_emails}")
+        print(f"Loading calendar events from {second_arg}...")
+        events = load_calendar_events(second_arg)
+    else:
+        # Multi-account mode: discover accounts, fetch each, merge
+        cache_dir = second_path
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        accounts = discover_all_accounts()
+        if accounts:
+            print(f"Discovered {len(accounts)} gog account(s): {[a['email'] for a in accounts]}")
+        else:
+            # gog auth list not available — fall back to default fetch
+            print("No gog accounts discovered via 'gog auth list' — fetching from default account")
+            accounts = [{'email': '', 'client': ''}]
+
+        json_paths = []
+        for account in accounts:
+            email = account['email']
+            client = account.get('client', '')
+            label = email or 'default'
+            print(f"Fetching events for {label}...")
+            path = fetch_account_events(email, client, cache_dir)
+            if path:
+                json_paths.append(path)
+
+        user_emails = discover_user_emails(accounts if accounts[0]['email'] else None)
+        print(f"User emails: {user_emails}")
+
+        print(f"Merging events from {len(json_paths)} source(s)...")
+        events = load_and_merge_events(json_paths)
+
     print(f"Found {len(events)} total events")
 
     # Filter and process events
@@ -1411,7 +1532,7 @@ def main():
             continue
 
         # Skip non-meetings
-        if should_skip_event(event, user_email):
+        if should_skip_event(event, user_emails):
             skipped_count += 1
             continue
 
@@ -1425,7 +1546,7 @@ def main():
         # Create meeting note
         print(f"\nProcessing: {summary}")
         try:
-            result = create_meeting_note(event, vault_root, "YYYY/MM-MMMM/YYYY-MM-DD dddd")
+            result = create_meeting_note(event, vault_root, "YYYY/MM-MMMM/YYYY-MM-DD dddd", user_emails)
             if result:
                 meeting_files.append(result)
         except Exception as e:

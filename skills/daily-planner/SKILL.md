@@ -34,24 +34,21 @@ Read Obsidian configuration to determine:
 - Meetings folder path (from `CLAUDE.md`)
 - Templates location (from `.obsidian/templates.json`)
 
-### 2. Fetch Calendar Data
+### 2. Fetch Calendar Data and Run the Processing Script
+
+> **CRITICAL: Run the Python script below. Do NOT manually create files or interpret the "Script Reference" section as steps to perform yourself — that section documents what the script does internally.**
+
+The script auto-discovers all authenticated `gog` accounts (via `gog auth list`), fetches events from each, and merges them. Pass the **cache directory** as the second argument:
 
 ```bash
 CACHE_DIR="$HOME/.cache/obsidian-claude-plugins"
 mkdir -p "$CACHE_DIR"
-gog calendar events --today --json --all-pages > "$CACHE_DIR/calendar_events.json"
-```
-
-### 3. Run the Processing Script
-
-> **CRITICAL: Run the Python script below. Do NOT manually create files or interpret the "Script Reference" section as steps to perform yourself — that section documents what the script does internally.**
-
-```bash
-CACHE_DIR="$HOME/.cache/obsidian-claude-plugins"
-python3 <skill_base_dir>/process_calendar.py "<vault_root>" "$CACHE_DIR/calendar_events.json"
+python3 <skill_base_dir>/process_calendar.py "<vault_root>" "$CACHE_DIR"
 ```
 
 Replace `<skill_base_dir>` with the base directory shown at the top of this skill's context, and `<vault_root>` with the vault path discovered in Step 1.
+
+If a `gog` account has an expired token, the script will print a warning with the re-auth command and continue processing the remaining accounts. A single JSON file path (`$CACHE_DIR/calendar_events.json`) can also be passed for backward compatibility.
 
 The script fully handles filtering, attendee matching, file creation/updating, Gemini transcript fetching, and daily note generation. **Check its stdout for any errors or warnings.**
 
