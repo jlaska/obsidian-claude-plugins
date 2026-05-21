@@ -14,7 +14,7 @@ import os
 import re
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional, Set, Tuple
 
@@ -41,11 +41,13 @@ def discover_all_accounts() -> List[Dict[str, str]]:
         return []
 
 
-def fetch_account_events(email: str, client: str, cache_dir: Path, date_flag: str = '--today') -> Optional[Path]:
+def fetch_account_events(email: str, client: str, cache_dir: Path, date_flags: Optional[List[str]] = None) -> Optional[Path]:
     """Fetch calendar events for one gog account, saving to cache_dir."""
     sanitized = re.sub(r'[@.]', '_', email)
     output_path = cache_dir / f'calendar_events_{sanitized}.json'
-    cmd = ['gog', 'calendar', 'events', '--account', email, date_flag, '--json', '--all-pages']
+    if date_flags is None:
+        date_flags = ['--today']
+    cmd = ['gog', 'calendar', 'events', '--account', email] + date_flags + ['--json', '--all-pages']
     if client and client not in ('', 'default'):
         cmd.extend(['--client', client])
     try:
@@ -1496,13 +1498,23 @@ def main():
             print("No gog accounts discovered via 'gog auth list' — fetching from default account")
             accounts = [{'email': '', 'client': ''}]
 
+        today = datetime.now().date()
+        if target_date.date() == today:
+            date_flags = ['--today']
+        else:
+            next_day = target_date + timedelta(days=1)
+            date_flags = [
+                f'--from={target_date.strftime("%Y-%m-%d")}',
+                f'--to={next_day.strftime("%Y-%m-%d")}',
+            ]
+
         json_paths = []
         for account in accounts:
             email = account['email']
             client = account.get('client', '')
             label = email or 'default'
             print(f"Fetching events for {label}...")
-            path = fetch_account_events(email, client, cache_dir)
+            path = fetch_account_events(email, client, cache_dir, date_flags)
             if path:
                 json_paths.append(path)
 
