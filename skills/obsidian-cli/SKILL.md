@@ -267,6 +267,11 @@ obsidian dev:errors
 # Evaluate JavaScript in Obsidian's context
 obsidian eval code="app.vault.getName()"
 
+# Read live plugin settings (useful for config discovery)
+obsidian eval "code=JSON.stringify(app.internalPlugins.getPluginById('daily-notes').instance.options)"
+obsidian eval "code=JSON.stringify(app.internalPlugins.getPluginById('templates').instance.options)"
+obsidian eval "code=JSON.stringify(app.plugins.getPlugin('templater-obsidian')?.settings)"
+
 # Get computed CSS for an element
 obsidian dev:css selector=".workspace-leaf"
 
@@ -282,14 +287,14 @@ obsidian dev:dom selector=".workspace"
 # List available templates
 obsidian templates
 
-# Read a template's raw content
-obsidian template:read file="Templates/Meeting.md"
+# Read a template's raw content (use name=, not file=)
+obsidian template:read "name=Meeting Template"
 
 # Read a template with Templater variables resolved
-obsidian template:read file="Templates/Meeting.md" resolve=true
+obsidian template:read "name=Meeting Template" resolve=true
 
 # Insert a template into the active note
-obsidian template:insert file="Templates/Meeting.md"
+obsidian template:insert "name=Meeting Template"
 ```
 
 ---
@@ -310,8 +315,18 @@ obsidian template:insert file="Templates/Meeting.md"
 # Check version / confirm CLI works
 obsidian version
 
-# Vault info
+# Vault info (all fields: name, path, files, folders, size)
 obsidian vault
+
+# Vault info — single field
+obsidian vault info=path
+obsidian vault info=name
+
+# List all registered vaults with paths
+obsidian vaults verbose
+
+# Path to today's daily note (relative to vault root)
+obsidian daily:path
 
 # Open today's daily note in UI
 obsidian daily
