@@ -37,7 +37,7 @@ just literal text.
 
 ### When to use
 
-- Finding vault connections for a new note (youtube-summary, book notes, etc.)
+- Finding vault connections for a new note (youtube-summarizer, book notes, etc.)
 - Locating notes about a person, project, or concept
 - Searching by tag, frontmatter property, or link relationship
 
@@ -245,7 +245,7 @@ obsidian create file="MEETINGS/2026/03-March/2026-03-23-New Meeting.md" \
 ## Workflow: Find Vault Connections for a New Note
 
 This is the recommended pattern for any skill that needs to surface related vault
-notes (e.g., youtube-summary, book notes):
+notes (e.g., youtube-summarizer, book notes):
 
 ```bash
 # 1. Try Dataview first (richest results)

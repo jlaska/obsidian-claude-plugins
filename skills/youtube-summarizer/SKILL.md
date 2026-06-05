@@ -1,5 +1,5 @@
 ---
-name: youtube-summary
+name: youtube-summarizer
 description: Summarize YouTube videos - fetches transcript, generates summary with key takeaways, and saves to Obsidian vault REFERENCES/ folder
 user-invocable: true
 allowed-tools:
@@ -17,7 +17,7 @@ Fetches a YouTube video transcript, generates a concise summary with key takeawa
 
 ## When to Use
 
-Invoke `/youtube-summary <url>` when you want to:
+Invoke `/youtube-summarizer <url>` when you want to:
 - Capture a YouTube video as a reference note in your vault
 - Get a concise summary and key takeaways without watching the full video
 - Build a searchable library of video content
@@ -33,7 +33,7 @@ pip install youtube-transcript-api yt-dlp
 Or use `uv` (no pre-install needed):
 
 ```bash
-uv run --with youtube-transcript-api --with yt-dlp skills/youtube-summary/fetch_youtube.py ...
+uv run --with youtube-transcript-api --with yt-dlp skills/youtube-summarizer/fetch_youtube.py ...
 ```
 
 ## Workflow
@@ -53,7 +53,7 @@ Parse the JSON to find the vault with `"open": true`, or use the most recently o
 Run the fetch script:
 
 ```bash
-python3 skills/youtube-summary/fetch_youtube.py "<vault_root>" "<youtube_url>"
+python3 skills/youtube-summarizer/fetch_youtube.py "<vault_root>" "<youtube_url>"
 ```
 
 The script outputs JSON to stdout:
@@ -197,7 +197,7 @@ Run the script in save-summary mode:
 ```bash
 CACHE_DIR="$HOME/.cache/obsidian-claude-plugins"
 mkdir -p "$CACHE_DIR"
-python3 skills/youtube-summary/fetch_youtube.py "<vault_root>" "<youtube_url>" --save-summary "$CACHE_DIR/yt_summary_<video_id>.json"
+python3 skills/youtube-summarizer/fetch_youtube.py "<vault_root>" "<youtube_url>" --save-summary "$CACHE_DIR/yt_summary_<video_id>.json"
 ```
 
 The script injects the summary, takeaways, tags, and vault connections into the note's frontmatter and body sections.
@@ -271,39 +271,39 @@ transcript: "[[YYYY-MM-DD - Video Title - transcript]]"
 
 **Body**:
 ```markdown
-# TLDR
+## TLDR
 
 <2-3 sentence ultra-brief summary>
 
-# Summary
+## Summary
 
 <3-5 paragraph overview>
 
-# Key Takeaways
+## Key Takeaways
 
 - [1:23] First key insight with timestamp
 - [5:10] Second key insight with timestamp
 
-# Protocols & Instructions
+## Protocols & Instructions
 
 - [2:00] Step 1: Do this
 - [3:30] Step 2: Then this
 
 (Or: None mentioned.)
 
-# Most Replayed
+## Most Replayed
 
 - [4:15] Most-watched moment: presenter reveals key finding (intensity: 0.92)
 - [8:30] Peak engagement: live demonstration (intensity: 0.87)
 
 (Or: Heatmap data not available for this video.)
 
-# Vault Connections
+## Vault Connections
 
 - Relates to [[Person Name]] discussed in [[Meeting Note]]
 - Connects to themes in [[Reference Note]]
 
-# Recommendations
+## Recommendations
 
 - Research [[Topic]] further
 - Read *Book Title* by Author

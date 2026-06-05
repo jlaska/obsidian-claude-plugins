@@ -11,30 +11,16 @@ created: {{created}}
 transcript: "[[{{transcript_stem}}]]"
 ---
 
-# TLDR
+## TLDR
 
+## Summary
 
+## Key Takeaways
 
-# Summary
+## Protocols & Instructions
 
+## Most Replayed
 
+## Vault Connections
 
-# Key Takeaways
-
-
-
-# Protocols & Instructions
-
-
-
-# Most Replayed
-
-
-
-# Vault Connections
-
-
-
-# Recommendations
-
-
+## Recommendations
