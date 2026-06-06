@@ -1,0 +1,22 @@
+{
+  "person": {
+    "names": [
+      {
+        "metadata": {"primary": true},
+        "displayName": "Test User",
+        "givenName": "Test",
+        "familyName": "User"
+      }
+    ],
+    "emailAddresses": [
+      {
+        "metadata": {"primary": true},
+        "value": "testuser@work.example.com"
+      },
+      {
+        "metadata": {"primary": false},
+        "value": "testuser@personal.example.com"
+      }
+    ]
+  }
+}

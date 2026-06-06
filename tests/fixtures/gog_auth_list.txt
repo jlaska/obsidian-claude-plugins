@@ -1,0 +1,2 @@
+testuser@work.example.com	default	calendar,drive,docs,people,gmail
+testuser@personal.example.com	personal	calendar,gmail

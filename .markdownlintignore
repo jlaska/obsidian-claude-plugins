@@ -1,3 +1,5 @@
 # Obsidian templates have intentional formatting (multiple H1s, blank lines)
 skills/obsidian-vault-setup/defaults/templates/
 skills/youtube-summary/defaults/templates/
+# Test fixtures mirror Obsidian vault conventions (multiple H1s by design)
+tests/fixtures/

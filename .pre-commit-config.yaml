@@ -1,4 +1,14 @@
 repos:
+  # Pytest - Unit tests for Python scripts
+  - repo: local
+    hooks:
+      - id: pytest-unit
+        name: pytest (unit tests)
+        entry: uv run --with pytest --with pytest-mock pytest tests/ -q --tb=short
+        language: system
+        pass_filenames: false
+        files: \.py$
+
   # Skillsaw (stbenjam) - Plugin structure validation
   - repo: local
     hooks:

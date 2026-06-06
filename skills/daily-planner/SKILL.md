@@ -26,253 +26,121 @@ Invoke `/daily-planner` at the start of your day to:
 
 ## Workflow
 
-### 1. Discover Vault Configuration
+### 1. Discover Vault and User Identity
 
-Read Obsidian configuration to determine:
-- Vault root path (from `~/Library/Application Support/obsidian/obsidian.json`)
-- Daily notes folder and date format (from `.obsidian/daily-notes.json`)
-- Meetings folder path (from `CLAUDE.md`)
-- Templates location (from `.obsidian/templates.json`)
-
-### 2. Fetch Calendar Data and Run the Processing Script
-
-> **CRITICAL: Run the Python script below. Do NOT manually create files or interpret the "Script Reference" section as steps to perform yourself — that section documents what the script does internally.**
-
-The script auto-discovers all authenticated `gog` accounts (via `gog auth list`), fetches events from each, and merges them. Pass the **cache directory** as the second argument:
+Run the discovery scripts to get vault configuration and user identity. All subsequent steps use these values.
 
 ```bash
+SKILL_BASE="<skill_base_dir>"
 CACHE_DIR="$HOME/.cache/obsidian-claude-plugins"
 mkdir -p "$CACHE_DIR"
-python3 <skill_base_dir>/process_calendar.py "<vault_root>" "$CACHE_DIR"
+
+VAULT_CONFIG=$("$SKILL_BASE/discover_vault.py" 2>/dev/null || python3 "$SKILL_BASE/discover_vault.py")
+VAULT_ROOT=$(echo "$VAULT_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin)['vault_root'])")
+
+SELF_JSON=$("$SKILL_BASE/discover_self.py" 2>/dev/null || python3 "$SKILL_BASE/discover_self.py")
+echo "$SELF_JSON" > "$CACHE_DIR/self.json"
 ```
 
-Replace `<skill_base_dir>` with the base directory shown at the top of this skill's context, and `<vault_root>` with the vault path discovered in Step 1.
+Replace `<skill_base_dir>` with the base directory shown at the top of this skill's context.
 
-If a `gog` account has an expired token, the script will print a warning with the re-auth command and continue processing the remaining accounts. A single JSON file path (`$CACHE_DIR/calendar_events.json`) can also be passed for backward compatibility.
+### 2. Fetch Calendar Events
 
-The script fully handles filtering, attendee matching, file creation/updating, Gemini transcript fetching, and daily note generation. **Check its stdout for any errors or warnings.**
+Discover all `gog`-authenticated Google accounts, fetch today's events from each, merge and filter them.
+
+```bash
+python3 "$SKILL_BASE/discover_events.py" \
+  --self-json "$CACHE_DIR/self.json" \
+  --cache-dir "$CACHE_DIR" \
+  > "$CACHE_DIR/events.json"
+```
+
+Check for warnings in stderr. If a `gog` account has an expired token, the script prints a re-auth command and continues with remaining accounts.
+
+### 3. Sync to Vault
+
+Create or update meeting files and the daily note's `# Meetings` table from the fetched events.
+
+```bash
+python3 "$SKILL_BASE/sync_to_vault.py" \
+  --vault-root "$VAULT_ROOT" \
+  --events-json "$CACHE_DIR/events.json" \
+  --self-json "$CACHE_DIR/self.json"
+```
+
+**Check stdout** for any errors, warnings about cancelled meetings, or skipped events.
 
 ### 4. Generate Meeting Preparation
 
-After the script completes, build a `# Meeting Preparation` section for the daily note.
+#### 4a. Gather meeting context
 
-#### 4a. Parse the daily note and classify meetings by time
-
-Read the daily note created in Step 3. Parse the `# 📅 Meetings` table to extract for each row:
-- Meeting wikilink stem and display title (e.g., `2026-03-24 - Alex - Sam` / `Alex - Sam`)
-- Time (e.g., `8:30 AM`)
-- Attendees list
-
-For each meeting, read its `start:` frontmatter field from the meeting file (`MEETINGS/YYYY/MM-Month/<stem>.md`) and compare to the current time:
-- **Upcoming** (`start` is in the future) → generate or regenerate its callout
-- **Past** (`start` is in the past) → preserve its existing callout exactly; skip all research and writing for it
-
-On the **first run** (no `# Meeting Preparation` section exists yet), generate callouts for **all** meetings regardless of start time.
-
-> **Important — no short-circuiting:** For every upcoming meeting, always fully re-execute steps 4b–4e from scratch: re-read the meeting frontmatter, re-search for previous meetings, re-read those meeting files, and re-read the PEOPLE Parking Lot. Do **not** inspect the existing callout content to decide whether to skip — the existing callout may be stale (e.g., the Parking Lot was updated since the last run). The only exception is past meetings, which are never touched.
-
-#### 4b. For each meeting, find previous meetings
-
-Read the meeting file's frontmatter (`MEETINGS/YYYY/MM-Month/<stem>.md`) to get the `attendees:` list.
-
-**Determine meeting type:**
-- 1 attendee → **1:1 meeting**
-- 2+ attendees → **group meeting**
-
-**Find previous meetings using `obsidian search` (indexed, fast):**
-
-Use a two-tier strategy based on whether the meeting file has a `recurringEventId` frontmatter field.
-
-**Tier 1 — Recurring meetings** (have `recurringEventId`): Use the series base ID for a precise match. Strip the `_R<timestamp>` suffix if present (e.g., `abc123_R20251125T133000` → `abc123`), then query:
+Run the context-gathering script to collect previous meetings, actions, and parking lot items. This script does all the mechanical vault reading so you don't have to.
 
 ```bash
-obsidian search query='[recurringEventId:<base-id>]' path="MEETINGS/" limit=5
+CONTEXT=$(python3 "$SKILL_BASE/gather_meeting_context.py" \
+  --vault-root "$VAULT_ROOT" \
+  --self-json "$CACHE_DIR/self.json")
 ```
 
-Obsidian tokenizes on underscores, so the base ID matches files that store the full value (with `_R` suffix) and files that store the stripped value — returning all instances of the same calendar series regardless of title variations.
+The JSON output has this shape per meeting:
+- `stem`, `display_title`, `time`, `start_iso` — meeting identity
+- `status` — `upcoming` or `past` (compare to current time)
+- `type` — `one_on_one` or `group`
+- `attendees` — wikilinks like `[[Person Name]]`
+- `previous_meetings` — list of `{stem, path, gemini_summary, actions_text, agenda_text}`
+- `parking_lot` — list of raw bullet strings from PEOPLE file
+- `is_first_run` — `true` if no `# Meeting Preparation` section exists yet
 
-**Tier 2 — Non-recurring meetings** (no `recurringEventId`): Use the `file:` operator to match by filename. This catches naming variations (e.g., `Alex Smith and Sam`, `Alex - Sam`) and is case-insensitive.
+#### 4b. For each upcoming meeting (or all on first run), generate callouts
 
-*1:1 meetings:* Search for the attendee's first name and the vault owner's first name:
-```bash
-obsidian search query='file:"<Person FirstName>" file:"<VaultOwnerFirstName>"' path="MEETINGS/" limit=5
-```
+Read the `CONTEXT` JSON and for each meeting with `status: "upcoming"` (or all if `is_first_run`):
 
-*Group meetings:* Search for the series title words:
-```bash
-obsidian search query='file:"<Series Title>"' path="MEETINGS/" limit=5
-```
+1. **Summarize** each previous meeting: extract a 1-sentence TL;DR (~15 words) from the raw `gemini_summary`, `actions_text`, or `agenda_text` — in that priority order. Use "No summary available" if all are empty.
 
-Exclude today's file from all results. Take the last 2-3 by filename (dates sort chronologically).
+2. **Generate suggested topics** by reasoning across:
+   - Open action items (`- [ ]` items in `actions_text`) → follow-up topics
+   - `parking_lot` items from PEOPLE file → include ALL of them, tag each with "(Parking Lot)"
+   - Themes from previous meeting summaries → ongoing topics needing attention
 
-> **Note:** These commands require Obsidian to be running. They use the indexed search — no filesystem scanning needed.
-
-#### 4c. Read and summarize previous meetings
-
-For each previous meeting file found, read it and extract a 1-sentence TL;DR (~15 words) using this priority:
-1. `### Summary` content under `## Notes by Gemini` (preferred)
-2. `## Actions` bullet items (fallback)
-3. `## Agenda` content (last resort)
-4. "No summary available" if none found
-
-Format the link as `[[YYYY-MM-DD - Title\|Month DD, YYYY]]` for clean display.
-
-#### 4d. Gather Parking Lot items (1:1 meetings only)
-
-For each 1:1 meeting, read `PEOPLE/<Person Name>.md` and extract bullet items from the `# Parking Lot` section. Skip if the file doesn't exist or has no Parking Lot section.
-
-#### 4e. Generate suggested topics
-
-Derive suggested topics per meeting from these sources:
-1. Open action items (`- [ ]` tasks or "will" commitments) from previous meetings
-2. Topics needing follow-up from previous summaries
-3. Parking Lot items from the PEOPLE file (1:1s only)
-
-Every Parking Lot item must be represented in Suggested topics — summarize or combine related items, but do not drop any. Tag each parking-lot-derived topic with "(Parking Lot)" at the end so the user can see its origin.
-
-If no previous meetings and no parking lot items exist: use "Introductions and agenda setting" as the only suggestion.
-
-#### 4f. Write the section to the daily note
-
-Build the full `# Meeting Preparation` section with one foldable callout per meeting.
-
-**Format per meeting:**
+3. **Write the callout** to the daily note using this format:
 
 ```
 > [!tip]- [[YYYY-MM-DD - Title\|Display Title]] (HH:MM AM/PM)
 > **Previous meetings:**
 > - [[YYYY-MM-DD - Title\|Month DD, YYYY]] - One-sentence summary
-> - [[YYYY-MM-DD - Title\|Month DD, YYYY]] - One-sentence summary
 >
 > **Suggested topics:**
 > - Follow up on [specific item] from [date]
-> - [Topic derived from Parking Lot item] (Parking Lot)
-> - [Ongoing topic from previous discussions]
+> - [Topic from parking lot item] (Parking Lot)
 ```
 
-`[!tip]-` makes the callout foldable (collapsed by default). Every line inside must be prefixed with a blockquote marker.
+**Placement rules:**
+- **First run** (`is_first_run: true`): Write all callouts in time order and insert the full `# Meeting Preparation` section immediately after the `# 📅 Meetings` table.
+- **Re-run**: Use surgical `Edit` operations — find and replace only `upcoming` meeting callouts (identified by the `[!tip]-` header wikilink). Leave `past` meeting callouts completely untouched.
 
-**Placement and update rules:**
+### 5. Cancelled Meeting File Cleanup
 
-**First run** (no `# Meeting Preparation` section exists): Generate callouts for all meetings and insert the full section immediately after the `# 📅 Meetings` table, before the next `---` separator.
+After Step 3, check stdout for lines beginning with `⚠️  Cancelled meeting files to review:`. For each listed file, prompt the user before taking any action:
 
-**Re-run** (section already exists): Use surgical `Edit` operations — do **not** replace the entire section. Instead:
-1. For each **upcoming** meeting: find and replace its existing callout (identified by matching the meeting wikilink in the `[!tip]-` header), or append a new callout if it doesn't have one yet.
-2. For each **past** meeting: leave its existing callout completely untouched — do not read, modify, or regenerate it.
-3. If a meeting has been removed from the calendar (the script removes its row from the meetings table automatically): remove its callout from Meeting Preparation as well.
-4. Preserve the ordering of callouts to match the meetings table (by start time).
+- **"no user modifications"** → ask: *"[Meeting title] was cancelled. The meeting file has no notes — delete it?"* → delete on confirmation
+- **"has user content in ## Actions"** → ask: *"[Meeting title] was cancelled but has notes. Keep or delete?"* → act on user's response
 
-Use the `Edit` tool for all writes — never rewrite the entire daily note file.
+**Never delete a meeting file without explicit user confirmation.**
 
 ---
 
 ## Script Reference
 
-> This section documents what `process_calendar.py` does internally. It is for reference only — the script performs all these steps automatically when invoked in Step 3.
+| Script | Purpose | Input | Output |
+|--------|---------|-------|--------|
+| `discover_vault.py` | Vault config | None (auto-discovers) | JSON: vault_root, folder paths, date format, today's paths |
+| `discover_self.py` | User identity | None (auto-discovers) | JSON: username, emails, display_name, first_name |
+| `discover_events.py` | Calendar fetch + filter | `--self-json`, `--cache-dir` | JSON: filtered events array |
+| `sync_to_vault.py` | Meeting files + daily note | `--vault-root`, `--events-json`, `--self-json` | Vault files updated; stdout: status + warnings |
+| `gather_meeting_context.py` | Vault introspection for AI prep | `--vault-root`, `--self-json` | JSON: meetings array with context |
+| `vault_utils.py` | Shared utilities (library) | — imported by other scripts | — |
 
-### Filtering Logic
-
-**Skip automatically:**
-- `eventType: "workingLocation"` — office/location tracking events
-- `status: "cancelled"` — cancelled or deleted calendar events
-- `responseStatus: "declined"` — meetings you declined
-- `responseStatus: "tentative"` or `"needsAction"` — not yet accepted
-- No `attendees` field, or only yourself as attendee
-- `guestsCanSeeOtherGuests: false` AND `guestsCanInviteOthers: false` — broadcast events
-
-**Create meeting notes for:**
-- Accepted meetings with at least one other attendee
-
-### File Paths
-
-**Daily note**: `DAILY_NOTES/YYYY/MM-Month/YYYY-MM-DD DayOfWeek.md`
-**Meeting files**: `MEETINGS/YYYY/MM-Month/YYYY-MM-DD - Title.md`
-
-Format derived from `.obsidian/daily-notes.json` format field (`YYYY/MM-MMMM/YYYY-MM-DD dddd`).
-
-### Attendee Matching
-
-For each attendee email:
-1. Search `PEOPLE/` files for `mail: <email>` in frontmatter
-2. Match by filename (case-insensitive)
-3. Fall back to `gog people search <email> --json`
-4. Use calendar display name as last resort
-
-Output: `"[[Person Name]]"` (quoted wikilink)
-
-### Meeting File Frontmatter
-
-```yaml
----
-attendees:
-  - "[[Person Name]]"
-tags:
-  - Meetings
-created: YYYY-MM-DD HH:MM
-start: YYYY-MM-DDTHH:MM:SS-TZ
-end: YYYY-MM-DDTHH:MM:SS-TZ
-gmeet: <hangout_link>
-agenda: <google doc URL>
-gemini: <gemini transcript URL>
-recurringEventId: <google calendar series id>  # only present for recurring events
-URL: <calendar event link>
----
-```
-
-### Gemini Transcript Fetching
-
-When a meeting has a `gemini:` URL, the script:
-1. Extracts the Google Doc ID from the URL
-2. Runs `gog docs cat --raw --results-only <doc_id>` to fetch the raw Docs API JSON
-3. Parses it into markdown (preserving bold, headings)
-4. Extracts Summary, Details, and Suggested next steps sections
-5. Inserts a populated `## Notes by Gemini` section into the meeting file
-
-This runs for all meetings (new and existing) on every invocation.
-
-### Daily Note Meetings Table
-
-```markdown
-# 📅 Meetings
-
-| Time | Meeting | Attendees | Summary |
-|------|---------|-----------|---------|
-| 8:00 AM | [[YYYY-MM-DD - Title\|Title]] | [[Person1]], [[Person2]] | [🤖](https://...) |
-| 8:30 AM | [[YYYY-MM-DD - Title 2\|Title 2]] | [[Person3]] |  |
-```
-
-Attendees truncated after 6 with `...`. Summary column shows 🤖 linked to Gemini doc when available.
-
-### Attachment Classification
-
-| Title contains | Property |
-|----------------|----------|
-| "gemini" | `gemini` |
-| recording mime type (video/mp4) | `recording` |
-| "minutes", "summary", "recap" | `minutes` |
-| Google Slides mime type | `slides` |
-| everything else (Google Docs) | `agenda` |
-
-### Idempotency
-
-On re-runs, the script:
-- Creates new meeting files only for newly-detected events
-- Adds missing frontmatter properties (never overwrites existing values)
-- Updates `## Notes by Gemini` content if it changed
-- Merges new meetings into the daily note's `# 📅 Meetings` table
-- **Removes stale rows** from the meetings table for cancelled/removed meetings (events no longer in the calendar)
-- **Reports stale meeting files** in stdout (does not auto-delete them)
-
-**Never overwrites:** user content in `## Agenda`, `## Actions`, or any manually-edited frontmatter fields.
-
-### Cancelled Meeting File Cleanup (Step 5)
-
-After the script completes, check stdout for lines beginning with `⚠️  Cancelled meeting files to review:`. For each listed file, prompt the user before taking any action:
-
-- **"no user modifications"** → ask: *"[Meeting title] was cancelled. The meeting file has no notes — delete it?"* → delete the file on confirmation
-- **"has user content in ## Actions"** → ask: *"[Meeting title] was cancelled but has notes in ## Actions. Keep the file or delete it?"* → act on the user's response
-
-**Never delete a meeting file without explicit user confirmation.**
+All scripts support `--help` for usage details.
 
 ## Directory Structure
 
@@ -281,4 +149,5 @@ DAILY_NOTES/YYYY/MM-Month/YYYY-MM-DD DayOfWeek.md
 MEETINGS/YYYY/MM-Month/YYYY-MM-DD - Title.md
 PEOPLE/First Last.md
 TEMPLATES/
+TRANSCRIPTS/
 ```

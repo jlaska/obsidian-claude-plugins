@@ -1,0 +1,103 @@
+{
+  "events": [
+    {
+      "summary": "Test User & Alice Tester 1:1",
+      "iCalUID": "meeting001@google.com",
+      "id": "meeting001",
+      "status": "confirmed",
+      "eventType": "default",
+      "start": {"dateTime": "2026-06-05T09:00:00-04:00", "timeZone": "America/New_York"},
+      "end": {"dateTime": "2026-06-05T09:30:00-04:00", "timeZone": "America/New_York"},
+      "attendees": [
+        {"email": "testuser@work.example.com", "responseStatus": "accepted", "self": true},
+        {"email": "atester@work.example.com", "responseStatus": "accepted", "displayName": "Alice Tester"}
+      ],
+      "recurringEventId": "recurringabc123",
+      "hangoutLink": "https://meet.google.com/abc-defg-hij",
+      "htmlLink": "https://www.google.com/calendar/event?eid=fakeeid1",
+      "organizer": {"email": "testuser@work.example.com", "self": true},
+      "created": "2026-01-01T00:00:00.000Z",
+      "updated": "2026-06-01T00:00:00.000Z"
+    },
+    {
+      "summary": "Team Standup",
+      "iCalUID": "standup001@google.com",
+      "id": "standup001",
+      "status": "confirmed",
+      "eventType": "default",
+      "start": {"dateTime": "2026-06-05T10:00:00-04:00", "timeZone": "America/New_York"},
+      "end": {"dateTime": "2026-06-05T10:30:00-04:00", "timeZone": "America/New_York"},
+      "attendees": [
+        {"email": "testuser@work.example.com", "responseStatus": "accepted", "self": true},
+        {"email": "atester@work.example.com", "responseStatus": "accepted", "displayName": "Alice Tester"},
+        {"email": "btester@work.example.com", "responseStatus": "accepted", "displayName": "Bob Tester"}
+      ],
+      "hangoutLink": "https://meet.google.com/xyz-uvwx-yz1",
+      "htmlLink": "https://www.google.com/calendar/event?eid=fakeeid2",
+      "organizer": {"email": "atester@work.example.com"},
+      "created": "2026-01-01T00:00:00.000Z",
+      "updated": "2026-06-01T00:00:00.000Z"
+    },
+    {
+      "summary": "Declined Meeting",
+      "iCalUID": "declined001@google.com",
+      "id": "declined001",
+      "status": "confirmed",
+      "eventType": "default",
+      "start": {"dateTime": "2026-06-05T11:00:00-04:00", "timeZone": "America/New_York"},
+      "end": {"dateTime": "2026-06-05T11:30:00-04:00", "timeZone": "America/New_York"},
+      "attendees": [
+        {"email": "testuser@work.example.com", "responseStatus": "declined", "self": true},
+        {"email": "other@work.example.com", "responseStatus": "accepted", "displayName": "Other Person"}
+      ],
+      "organizer": {"email": "other@work.example.com"},
+      "created": "2026-01-01T00:00:00.000Z",
+      "updated": "2026-06-01T00:00:00.000Z"
+    },
+    {
+      "summary": "Working Location",
+      "iCalUID": "workloc001@google.com",
+      "id": "workloc001",
+      "status": "confirmed",
+      "eventType": "workingLocation",
+      "start": {"date": "2026-06-05"},
+      "end": {"date": "2026-06-06"},
+      "organizer": {"email": "testuser@work.example.com", "self": true},
+      "created": "2026-01-01T00:00:00.000Z",
+      "updated": "2026-06-01T00:00:00.000Z"
+    },
+    {
+      "summary": "Broadcast Announcement",
+      "iCalUID": "broadcast001@google.com",
+      "id": "broadcast001",
+      "status": "confirmed",
+      "eventType": "default",
+      "start": {"dateTime": "2026-06-05T14:00:00-04:00", "timeZone": "America/New_York"},
+      "end": {"dateTime": "2026-06-05T15:00:00-04:00", "timeZone": "America/New_York"},
+      "attendees": [
+        {"email": "testuser@work.example.com", "responseStatus": "needsAction", "self": true}
+      ],
+      "guestsCanSeeOtherGuests": false,
+      "guestsCanInviteOthers": false,
+      "organizer": {"email": "org@work.example.com"},
+      "created": "2026-01-01T00:00:00.000Z",
+      "updated": "2026-06-01T00:00:00.000Z"
+    },
+    {
+      "summary": "Cancelled Meeting",
+      "iCalUID": "cancelled001@google.com",
+      "id": "cancelled001",
+      "status": "cancelled",
+      "eventType": "default",
+      "start": {"dateTime": "2026-06-05T16:00:00-04:00", "timeZone": "America/New_York"},
+      "end": {"dateTime": "2026-06-05T16:30:00-04:00", "timeZone": "America/New_York"},
+      "attendees": [
+        {"email": "testuser@work.example.com", "responseStatus": "accepted", "self": true},
+        {"email": "other@work.example.com", "responseStatus": "accepted"}
+      ],
+      "organizer": {"email": "other@work.example.com"},
+      "created": "2026-01-01T00:00:00.000Z",
+      "updated": "2026-06-01T00:00:00.000Z"
+    }
+  ]
+}

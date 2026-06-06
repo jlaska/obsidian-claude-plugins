@@ -1,14 +1,26 @@
-.PHONY: lint lint-fix setup install-hooks clean help install update
+.PHONY: lint lint-fix test test-all test-integration setup install-hooks clean help install update
 
 help:
 	@echo "Available targets:"
-	@echo "  make lint          - Run all linters (stbenjam + pdugan20 claudelint + markdownlint)"
+	@echo "  make test          - Run unit tests (fast, no external dependencies)"
+	@echo "  make test-all      - Run all tests including integration tests"
+	@echo "  make test-integration - Run integration tests (requires gog CLI + network)"
+	@echo "  make lint          - Run all linters (pytest + skillsaw + claudelint + markdownlint)"
 	@echo "  make lint-fix      - Run linters with auto-fix where possible"
 	@echo "  make setup         - Install pre-commit hooks"
 	@echo "  make install-hooks - Install pre-commit git hooks"
 	@echo "  make clean         - Remove generated files"
 	@echo "  make install       - Install plugin into Claude Code (first-time setup)"
 	@echo "  make update        - Update plugin to latest pushed commit (then restart Claude Code)"
+
+test:
+	uv run --with pytest --with pytest-mock pytest tests/ -m "not integration and not vault" -v
+
+test-all:
+	uv run --with pytest --with pytest-mock pytest tests/ -v
+
+test-integration:
+	uv run --with pytest --with pytest-mock pytest tests/ -m integration -v
 
 lint:
 	uvx pre-commit run --all-files

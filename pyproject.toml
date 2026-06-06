@@ -1,0 +1,15 @@
+[project]
+name = "obsidian-claude-plugins"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[project.optional-dependencies]
+test = ["pytest>=8.0", "pytest-mock>=3.12"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: fast tests with mocked external dependencies",
+    "integration: tests that require gog CLI and network access",
+    "vault: tests that require a real Obsidian vault on disk",
+]
