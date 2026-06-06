@@ -66,11 +66,10 @@ def fetch_account_events(
     if date_str == today_str:
         date_flags = ['--today']
     else:
-        # Fetch events for the specified day
-        date_flags = [
-            '--time-min', f'{date_str}T00:00:00Z',
-            '--time-max', f'{date_str}T23:59:59Z',
-        ]
+        # Fetch events for the specified day using gog's --from/--to flags
+        from datetime import timedelta
+        next_day = (date + timedelta(days=1)).strftime('%Y-%m-%d')
+        date_flags = [f'--from={date_str}', f'--to={next_day}']
 
     cmd = ['gog', 'calendar', 'events', '--account', email] + date_flags + [
         '--json', '--all-pages', '--all'
