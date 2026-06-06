@@ -212,8 +212,11 @@ def main():
         help='Path to discover_self.py output JSON (for user email filtering)',
     )
     parser.add_argument(
-        '--user-emails',
-        help='Comma-separated list of user email addresses',
+        '--user-email',
+        dest='user_emails',
+        action='append',
+        metavar='EMAIL',
+        help='Your email address used to filter events (skip declined/self-only); may be supplied multiple times',
     )
     args = parser.parse_args()
 
@@ -229,7 +232,7 @@ def main():
     if args.self_json:
         user_emails = load_user_emails_from_self_json(args.self_json)
     elif args.user_emails:
-        user_emails = {e.strip().lower() for e in args.user_emails.split(',')}
+        user_emails = {e.strip().lower() for e in args.user_emails}
 
     cache_dir = Path(args.cache_dir) if args.cache_dir else None
     if cache_dir:
