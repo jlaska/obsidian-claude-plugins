@@ -61,7 +61,7 @@ class TestFetchAccountEventsDateFlags:
         # Explicitly verify the wrong flags are not used
         assert not any("--time-min" in str(a) or "--time-max" in str(a) for a in cmd)
 
-    def test_uses_all_flag_for_all_calendars(self):
+    def test_default_uses_primary_calendar_only(self):
         account = {"email": "testuser@work.example.com", "client": "default"}
         today = datetime.now()
         captured = []
@@ -73,7 +73,40 @@ class TestFetchAccountEventsDateFlags:
         with patch("discover_events.subprocess.run", side_effect=fake_run):
             discover_events.fetch_account_events(account, today)
 
+        assert "--all" not in captured[0]
+        assert "--cal" not in captured[0]
+
+    def test_all_calendars_flag_passes_all(self):
+        account = {"email": "testuser@work.example.com", "client": "default"}
+        today = datetime.now()
+        captured = []
+
+        def fake_run(cmd, **kwargs):
+            captured.append(cmd)
+            return self._make_result([])
+
+        with patch("discover_events.subprocess.run", side_effect=fake_run):
+            discover_events.fetch_account_events(account, today, all_calendars=True)
+
         assert "--all" in captured[0]
+
+    def test_calendars_flag_passes_cal_ids(self):
+        account = {"email": "testuser@work.example.com", "client": "default"}
+        today = datetime.now()
+        captured = []
+
+        def fake_run(cmd, **kwargs):
+            captured.append(cmd)
+            return self._make_result([])
+
+        with patch("discover_events.subprocess.run", side_effect=fake_run):
+            discover_events.fetch_account_events(account, today, calendars=["cal1@example.com", "cal2@example.com"])
+
+        cmd = captured[0]
+        assert "--all" not in cmd
+        assert "--cal" in cmd
+        assert "cal1@example.com" in cmd
+        assert "cal2@example.com" in cmd
 
 
 class TestShouldSkipEvent:

@@ -55,6 +55,8 @@ python3 "$SKILL_BASE/discover_events.py" \
   > "$CACHE_DIR/events.json"
 ```
 
+By default only the **primary calendar** of each account is queried (not shared or coworker calendars). To include additional calendars, use `--calendars "cal-id-1,cal-id-2"`. To fetch all visible calendars (old behavior), use `--all-calendars`.
+
 Check for warnings in stderr. If a `gog` account has an expired token, the script prints a re-auth command and continues with remaining accounts.
 
 ### 3. Sync to Vault
@@ -135,7 +137,7 @@ After Step 3, check stdout for lines beginning with `⚠️  Cancelled meeting f
 |--------|---------|-------|--------|
 | `discover_vault.py` | Vault config | None (auto-discovers) | JSON: vault_root, folder paths, date format, today's paths |
 | `discover_self.py` | User identity | None (auto-discovers) | JSON: username, emails, display_name, first_name |
-| `discover_events.py` | Calendar fetch + filter | `--self-json`, `--cache-dir` | JSON: filtered events array |
+| `discover_events.py` | Calendar fetch + filter | `--self-json`, `--cache-dir`, `--calendars`, `--all-calendars` | JSON: filtered events array |
 | `sync_to_vault.py` | Meeting files + daily note | `--vault-root`, `--events-json`, `--self-json` | Vault files updated; stdout: status + warnings |
 | `gather_meeting_context.py` | Vault introspection for AI prep | `--vault-root`, `--self-json` | JSON: meetings array with context |
 | `vault_utils.py` | Shared utilities (library) | — imported by other scripts | — |

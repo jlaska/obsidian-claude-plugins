@@ -47,7 +47,7 @@ def fetch_account_events(email: str, client: str, cache_dir: Path, date_flags: O
     output_path = cache_dir / f'calendar_events_{sanitized}.json'
     if date_flags is None:
         date_flags = ['--today']
-    cmd = ['gog', 'calendar', 'events', '--account', email] + date_flags + ['--json', '--all-pages', '--all']
+    cmd = ['gog', 'calendar', 'events', '--account', email] + date_flags + ['--json', '--all-pages']
     if client and client not in ('', 'default'):
         cmd.extend(['--client', client])
     try:

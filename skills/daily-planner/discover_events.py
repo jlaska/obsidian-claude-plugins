@@ -55,8 +55,14 @@ def fetch_account_events(
     account: Dict,
     date: datetime,
     cache_dir: Optional[Path] = None,
+    calendars: Optional[List[str]] = None,
+    all_calendars: bool = False,
 ) -> Optional[List[Dict]]:
-    """Fetch calendar events for one gog account for the given date."""
+    """Fetch calendar events for one gog account for the given date.
+
+    By default fetches only the primary calendar. Pass calendars= to include
+    specific calendar IDs, or all_calendars=True to fetch all visible calendars.
+    """
     email = account['email']
     client = account.get('client', '')
 
@@ -71,9 +77,16 @@ def fetch_account_events(
         next_day = (date + timedelta(days=1)).strftime('%Y-%m-%d')
         date_flags = [f'--from={date_str}', f'--to={next_day}']
 
+    cal_flags: List[str] = []
+    if all_calendars:
+        cal_flags = ['--all']
+    elif calendars:
+        for cal_id in calendars:
+            cal_flags.extend(['--cal', cal_id])
+
     cmd = ['gog', 'calendar', 'events', '--account', email] + date_flags + [
-        '--json', '--all-pages', '--all'
-    ]
+        '--json', '--all-pages'
+    ] + cal_flags
     if client and client not in ('', 'default'):
         cmd.extend(['--client', client])
 
@@ -171,6 +184,8 @@ def discover_events(
     date: Optional[datetime] = None,
     user_emails: Optional[Set[str]] = None,
     cache_dir: Optional[Path] = None,
+    calendars: Optional[List[str]] = None,
+    all_calendars: bool = False,
 ) -> List[Dict]:
     """Discover, fetch, merge, and filter calendar events.
 
@@ -178,6 +193,8 @@ def discover_events(
         date: Target date (default: today)
         user_emails: Set of the user's own email addresses for self-filtering
         cache_dir: Optional directory to cache raw per-account JSON files
+        calendars: Optional list of calendar IDs to include (default: primary only)
+        all_calendars: Fetch all visible calendars (overrides calendars=)
 
     Returns:
         List of filtered calendar event dicts
@@ -194,7 +211,10 @@ def discover_events(
 
     all_event_lists: List[List[Dict]] = []
     for account in accounts:
-        events = fetch_account_events(account, date, cache_dir=cache_dir)
+        events = fetch_account_events(
+            account, date, cache_dir=cache_dir,
+            calendars=calendars, all_calendars=all_calendars,
+        )
         if events is not None:
             all_event_lists.append(events)
 
@@ -218,6 +238,15 @@ def main():
         metavar='EMAIL',
         help='Your email address used to filter events (skip declined/self-only); may be supplied multiple times',
     )
+    parser.add_argument(
+        '--calendars',
+        help='Comma-separated list of calendar IDs to include (default: primary calendar only)',
+    )
+    parser.add_argument(
+        '--all-calendars',
+        action='store_true',
+        help='Fetch events from all visible calendars (overrides --calendars)',
+    )
     args = parser.parse_args()
 
     date = datetime.now()
@@ -234,11 +263,19 @@ def main():
     elif args.user_emails:
         user_emails = {e.strip().lower() for e in args.user_emails}
 
+    calendars = [c.strip() for c in args.calendars.split(',')] if args.calendars else None
+
     cache_dir = Path(args.cache_dir) if args.cache_dir else None
     if cache_dir:
         cache_dir.mkdir(parents=True, exist_ok=True)
 
-    events = discover_events(date=date, user_emails=user_emails, cache_dir=cache_dir)
+    events = discover_events(
+        date=date,
+        user_emails=user_emails,
+        cache_dir=cache_dir,
+        calendars=calendars,
+        all_calendars=args.all_calendars,
+    )
     print(json.dumps({'events': events}, indent=2))
 
 
