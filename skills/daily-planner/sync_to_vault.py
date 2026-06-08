@@ -870,8 +870,7 @@ def main():
 
     try:
         with open(args.events_json) as f:
-            data = json.load(f)
-        events = data.get('events', data) if isinstance(data, dict) else data
+            events = json.load(f)
     except (OSError, json.JSONDecodeError) as e:
         print(f'Error reading events JSON: {e}', file=sys.stderr)
         sys.exit(1)

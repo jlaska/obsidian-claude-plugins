@@ -321,12 +321,8 @@ def gather_context(
     daily_note_path = vault_root / 'DAILY_NOTES' / year / f'{month_num}-{month_name}' / f'{date_part} {day_name}.md'
 
     if not daily_note_path.exists():
-        return {
-            'date': date_part,
-            'is_first_run': True,
-            'meetings': [],
-            'error': f'Daily note not found: {daily_note_path}',
-        }
+        print(f'Warning: Daily note not found: {daily_note_path}', file=sys.stderr)
+        return []
 
     daily_note_content = daily_note_path.read_text()
     is_first_run = not _has_meeting_preparation_section(daily_note_content)
@@ -377,13 +373,10 @@ def gather_context(
             'recurring_event_id': recurring_id or None,
             'previous_meetings': previous_meetings,
             'parking_lot': parking_lot,
+            'is_first_run': is_first_run,
         })
 
-    return {
-        'date': date_part,
-        'is_first_run': is_first_run,
-        'meetings': meetings,
-    }
+    return meetings
 
 
 def main():

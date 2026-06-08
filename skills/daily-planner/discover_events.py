@@ -285,7 +285,7 @@ def main():
         calendars=calendars,
         all_calendars=args.all_calendars,
     )
-    print(json.dumps({'events': events}, indent=2))
+    print(json.dumps(events, indent=2))
 
 
 if __name__ == '__main__':

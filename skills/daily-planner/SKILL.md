@@ -84,7 +84,7 @@ CONTEXT=$(python3 "$SKILL_BASE/gather_meeting_context.py" \
   --self-json "$CACHE_DIR/self.json")
 ```
 
-The JSON output has this shape per meeting:
+The output is a flat JSON array. Each element has this shape:
 - `stem`, `display_title`, `time`, `start_iso` — meeting identity
 - `status` — `upcoming` or `past` (compare to current time)
 - `type` — `one_on_one` or `group`
@@ -95,7 +95,7 @@ The JSON output has this shape per meeting:
 
 #### 4b. For each upcoming meeting (or all on first run), generate callouts
 
-Read the `CONTEXT` JSON and for each meeting with `status: "upcoming"` (or all if `is_first_run`):
+Read the `CONTEXT` JSON array and for each meeting with `status: "upcoming"` (or all if `is_first_run`):
 
 1. **Summarize** each previous meeting: extract a 1-sentence TL;DR (~15 words) from the raw `gemini_summary`, `actions_text`, or `agenda_text` — in that priority order. Use "No summary available" if all are empty.
 
@@ -117,7 +117,7 @@ Read the `CONTEXT` JSON and for each meeting with `status: "upcoming"` (or all i
 ```
 
 **Placement rules:**
-- **First run** (`is_first_run: true`): Write all callouts in time order and insert the full `# Meeting Preparation` section immediately after the `# 📅 Meetings` table.
+- **First run** (any meeting has `is_first_run: true`): Write all callouts in time order and insert the full `# Meeting Preparation` section immediately after the `# 📅 Meetings` table.
 - **Re-run**: Use surgical `Edit` operations — find and replace only `upcoming` meeting callouts (identified by the `[!tip]-` header wikilink). Leave `past` meeting callouts completely untouched.
 
 ### 5. Cancelled Meeting File Cleanup
@@ -139,7 +139,7 @@ After Step 3, check stdout for lines beginning with `⚠️  Cancelled meeting f
 | `discover_self.py` | User identity | None (auto-discovers) | JSON: username, emails, display_name, first_name |
 | `discover_events.py` | Calendar fetch + filter | `--self-json`, `--cache-dir`, `--calendars`, `--all-calendars` | JSON: filtered events array |
 | `sync_to_vault.py` | Meeting files + daily note | `--vault-root`, `--events-json`, `--self-json` | Vault files updated; stdout: status + warnings |
-| `gather_meeting_context.py` | Vault introspection for AI prep | `--vault-root`, `--self-json` | JSON: meetings array with context |
+| `gather_meeting_context.py` | Vault introspection for AI prep | `--vault-root`, `--self-json` | JSON: flat array of meetings, each with `is_first_run` |
 | `vault_utils.py` | Shared utilities (library) | — imported by other scripts | — |
 
 All scripts support `--help` for usage details.

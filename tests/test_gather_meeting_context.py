@@ -128,50 +128,50 @@ class TestFindPreviousMeetings:
 class TestGatherContext:
     def test_full_context(self, mock_vault):
         with patch("gather_meeting_context._obsidian_search", return_value=[]):
-            context = gmc.gather_context(
+            meetings = gmc.gather_context(
                 vault_root=mock_vault,
                 date=datetime(2026, 6, 5),
                 owner_first_name="Test",
             )
-        assert context["date"] == "2026-06-05"
-        assert isinstance(context["meetings"], list)
-        assert len(context["meetings"]) == 1
+        assert isinstance(meetings, list)
+        assert len(meetings) == 1
 
-        meeting = context["meetings"][0]
+        meeting = meetings[0]
         assert meeting["stem"] == "2026-06-05 - Test User & Alice Tester 1-1"
         assert meeting["type"] == "one_on_one"
         assert meeting["status"] == "past"
+        assert "is_first_run" in meeting
         assert len(meeting["previous_meetings"]) > 0
         assert len(meeting["parking_lot"]) > 0
 
     def test_previous_meeting_has_context(self, mock_vault):
         with patch("gather_meeting_context._obsidian_search", return_value=[]):
-            context = gmc.gather_context(
+            meetings = gmc.gather_context(
                 vault_root=mock_vault,
                 date=datetime(2026, 6, 5),
                 owner_first_name="Test",
             )
-        prev = context["meetings"][0]["previous_meetings"][0]
+        prev = meetings[0]["previous_meetings"][0]
         assert prev["gemini_summary"] != ""
         assert "Q2 priorities" in prev["gemini_summary"]
         assert "- [ ]" in prev["actions_text"] or "- [x]" in prev["actions_text"]
 
-    def test_missing_daily_note_returns_error(self, mock_vault):
-        context = gmc.gather_context(
+    def test_missing_daily_note_returns_empty_list(self, mock_vault):
+        meetings = gmc.gather_context(
             vault_root=mock_vault,
             date=datetime(2025, 1, 1),  # No daily note for this date
             owner_first_name="Test",
         )
-        assert "error" in context
-        assert context["meetings"] == []
+        assert meetings == []
 
     def test_output_is_json_serializable(self, mock_vault):
         with patch("gather_meeting_context._obsidian_search", return_value=[]):
-            context = gmc.gather_context(
+            meetings = gmc.gather_context(
                 vault_root=mock_vault,
                 date=datetime(2026, 6, 5),
                 owner_first_name="Test",
             )
-        json_str = json.dumps(context)
+        json_str = json.dumps(meetings)
         parsed = json.loads(json_str)
-        assert parsed["date"] == "2026-06-05"
+        assert isinstance(parsed, list)
+        assert parsed[0]["stem"] == "2026-06-05 - Test User & Alice Tester 1-1"
