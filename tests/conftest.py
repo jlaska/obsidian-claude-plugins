@@ -76,6 +76,10 @@ def mock_gog_subprocess(monkeypatch, gog_whoami_json, gog_auth_list_text, sample
             result.stdout = json.dumps(sample_events)
         elif "people" in cmd_str and "search" in cmd_str:
             result.stdout = json.dumps({"people": []})
+        elif "docs" in cmd_str and "cat" in cmd_str:
+            result.stdout = json.dumps({"body": {"content": []}})
+        elif "drive" in cmd_str and "get" in cmd_str:
+            result.stdout = json.dumps({"name": "fixture-file"})
         else:
             result.returncode = 1
             result.stdout = ""
@@ -84,6 +88,34 @@ def mock_gog_subprocess(monkeypatch, gog_whoami_json, gog_auth_list_text, sample
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     return fake_run
+
+
+@pytest.fixture
+def self_json_file(tmp_path, gog_whoami_json):
+    """Write discover_self.py-format JSON to a temp file, return path."""
+    whoami = json.loads(gog_whoami_json)
+    person = whoami["person"]
+    names = person.get("names", [{}])
+    emails = [e["value"] for e in person.get("emailAddresses", [])]
+    display_name = names[0].get("displayName", "") if names else ""
+    first_name = names[0].get("givenName", "") if names else ""
+    self_data = {
+        "username": "testuser",
+        "emails": emails,
+        "display_name": display_name,
+        "first_name": first_name,
+    }
+    path = tmp_path / "self.json"
+    path.write_text(json.dumps(self_data))
+    return path
+
+
+@pytest.fixture
+def events_json_file(tmp_path, sample_events_filtered):
+    """Write filtered events as a flat JSON array to a temp file, return path."""
+    path = tmp_path / "events.json"
+    path.write_text(json.dumps(sample_events_filtered, indent=2))
+    return path
 
 
 @pytest.fixture
