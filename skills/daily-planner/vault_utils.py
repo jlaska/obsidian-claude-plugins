@@ -176,7 +176,7 @@ def extract_parking_lot(content: str) -> List[str]:
     section = content[start:end]
     items = []
     for line in section.split('\n'):
-        m = re.match(r'^[-*]\s+(.+)', line)
+        m = re.match(r'^(?:[-*]|\d+\.)\s+(.+)', line)
         if m:
             items.append(m.group(1).strip())
     return items
