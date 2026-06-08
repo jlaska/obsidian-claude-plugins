@@ -143,6 +143,15 @@ def should_skip_event(event: Dict, user_emails: Set[str]) -> bool:
 
     attendees = event.get('attendees', [])
 
+    # User is not a participant (e.g., shared/delegated calendar event)
+    if user_emails and attendees:
+        organizer_email = event.get('organizer', {}).get('email', '').lower()
+        creator_email = event.get('creator', {}).get('email', '').lower()
+        user_is_attendee = any(a.get('email', '').lower() in user_emails for a in attendees)
+        user_is_owner = organizer_email in user_emails or creator_email in user_emails
+        if not (user_is_attendee or user_is_owner):
+            return True
+
     # User has not accepted
     for attendee in attendees:
         if attendee.get('email', '').lower() in user_emails:
