@@ -82,6 +82,72 @@ class TestHasMeetingPreparationSection:
         assert gmc._has_meeting_preparation_section(content) is False
 
 
+class TestMeetingsNeedingContent:
+    def test_returns_stems_with_placeholder(self):
+        content = (
+            "# Meeting Preparation\n\n"
+            "> [!tip]- [[2026-06-09 - Meeting A\\|Meeting A]] (9:00 AM)\n"
+            "> **Previous meetings:**\n"
+            "> - *(gathering context...)*\n"
+            ">\n"
+            "> **Suggested topics:**\n"
+            "> - *(preparing...)*\n"
+        )
+        result = gmc._meetings_needing_content(content)
+        assert "2026-06-09 - Meeting A" in result
+
+    def test_excludes_callouts_with_real_content(self):
+        content = (
+            "# Meeting Preparation\n\n"
+            "> [!tip]- [[2026-06-09 - Meeting B\\|Meeting B]] (10:00 AM)\n"
+            "> **Previous meetings:**\n"
+            "> - [[2026-06-01 - Meeting B\\|June 01, 2026]] - Discussed roadmap.\n"
+            ">\n"
+            "> **Suggested topics:**\n"
+            "> - Follow up on roadmap items\n"
+        )
+        result = gmc._meetings_needing_content(content)
+        assert "2026-06-09 - Meeting B" not in result
+
+    def test_returns_empty_when_no_section(self):
+        content = "# 📅 Meetings\n\nTable\n"
+        result = gmc._meetings_needing_content(content)
+        assert result == set()
+
+    def test_mixed_callouts(self):
+        content = (
+            "# Meeting Preparation\n\n"
+            "> [!tip]- [[2026-06-09 - Meeting A\\|Meeting A]] (9:00 AM)\n"
+            "> **Previous meetings:**\n"
+            "> - *(gathering context...)*\n"
+            ">\n"
+            "> **Suggested topics:**\n"
+            "> - *(preparing...)*\n"
+            "\n"
+            "> [!tip]- [[2026-06-09 - Meeting B\\|Meeting B]] (10:00 AM)\n"
+            "> **Previous meetings:**\n"
+            "> - [[2026-06-01 - Meeting B\\|June 01, 2026]] - Reviewed roadmap.\n"
+            ">\n"
+            "> **Suggested topics:**\n"
+            "> - Follow up\n"
+        )
+        result = gmc._meetings_needing_content(content)
+        assert "2026-06-09 - Meeting A" in result
+        assert "2026-06-09 - Meeting B" not in result
+
+    def test_needs_content_field_in_gather_context_output(self, mock_vault):
+        with patch("gather_meeting_context._obsidian_search", return_value=[]):
+            meetings = gmc.gather_context(
+                vault_root=mock_vault,
+                date=datetime(2026, 6, 5),
+                owner_first_name="Test",
+            )
+        assert len(meetings) > 0
+        for m in meetings:
+            assert "needs_content" in m
+            assert isinstance(m["needs_content"], bool)
+
+
 class TestExtractAttendeesListFromFile:
     def test_extracts_attendees(self, mock_vault):
         meeting_file = mock_vault / "MEETINGS" / "2026" / "06-June" / "2026-06-05 - Test User & Alice Tester 1-1.md"

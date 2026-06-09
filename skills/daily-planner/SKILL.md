@@ -118,7 +118,7 @@ Read the `CONTEXT` JSON array and for each meeting with `status: "upcoming"` (or
 
 **Placement rules:**
 - **First run** (any meeting has `is_first_run: true`): Write all callouts in time order and insert the full `# Meeting Preparation` section immediately after the `# 📅 Meetings` table.
-- **Re-run**: Use surgical `Edit` operations — find and replace only `upcoming` meeting callouts (identified by the `[!tip]-` header wikilink). Leave `past` meeting callouts completely untouched.
+- **Re-run**: Use surgical `Edit` operations targeting callouts that are `upcoming` OR have `needs_content: true` (placeholder skeletons inserted by sync_to_vault.py for newly added meetings). Leave `past` meeting callouts with real content completely untouched. Note: removed meeting callouts are already cleaned up automatically by `sync_to_vault.py` in Step 3 — you do not need to handle deletions.
 
 ### 5. Cancelled Meeting File Cleanup
 

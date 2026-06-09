@@ -102,6 +102,27 @@ def _has_meeting_preparation_section(daily_note_content: str) -> bool:
     return bool(re.search(r'^# Meeting Preparation', daily_note_content, re.MULTILINE))
 
 
+def _meetings_needing_content(daily_note_content: str) -> set:
+    """Return stems whose Meeting Preparation callouts contain a placeholder skeleton."""
+    heading_match = re.search(r'^# Meeting Preparation', daily_note_content, re.MULTILINE)
+    if not heading_match:
+        return set()
+    after = daily_note_content[heading_match.end():]
+    next_heading = re.search(r'\n#', after)
+    section = after[:next_heading.start()] if next_heading else after
+
+    needs = set()
+    for m in re.finditer(r'^> \[!tip\]-\s+\[\[([^\\|\]]+)', section, re.MULTILINE):
+        # Look ahead in the section for the placeholder marker
+        block_start = m.start()
+        next_m = re.search(r'^> \[!tip\]-', section[m.end():], re.MULTILINE)
+        block_end = m.end() + next_m.start() if next_m else len(section)
+        block_text = section[block_start:block_end]
+        if '*(preparing...)*' in block_text:
+            needs.add(m.group(1).strip())
+    return needs
+
+
 # ---------------------------------------------------------------------------
 # Meeting file introspection
 # ---------------------------------------------------------------------------
@@ -326,6 +347,7 @@ def gather_context(
 
     daily_note_content = daily_note_path.read_text()
     is_first_run = not _has_meeting_preparation_section(daily_note_content)
+    needs_content_stems = _meetings_needing_content(daily_note_content)
     table_rows = parse_meetings_table(daily_note_content)
 
     meetings_dir = vault_root / 'MEETINGS' / year / f'{month_num}-{month_name}'
@@ -374,6 +396,7 @@ def gather_context(
             'previous_meetings': previous_meetings,
             'parking_lot': parking_lot,
             'is_first_run': is_first_run,
+            'needs_content': stem in needs_content_stems,
         })
 
     return meetings

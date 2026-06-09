@@ -672,6 +672,124 @@ def build_meetings_table(meeting_rows: List[Tuple[str, str, Dict]]) -> str:
     return '\n'.join(lines)
 
 
+_CALLOUT_HEADER_RE = re.compile(
+    r'^> \[!tip\]-\s+\[\[([^\\|\]]+)',
+    re.MULTILINE,
+)
+_PLACEHOLDER_MARKER = '*(preparing...)*'
+
+
+def _split_callout_blocks(prep_section: str) -> List[Tuple[str, str]]:
+    """Split a Meeting Preparation section body into (stem, block_text) pairs.
+
+    Each block starts at a > [!tip]- line and ends just before the next one
+    (or at the end of the section).
+    """
+    matches = list(_CALLOUT_HEADER_RE.finditer(prep_section))
+    if not matches:
+        return []
+    blocks = []
+    for i, m in enumerate(matches):
+        stem = m.group(1).strip()
+        start = m.start()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(prep_section)
+        blocks.append((stem, prep_section[start:end]))
+    return blocks
+
+
+def _build_placeholder_callout(stem: str, fm: Dict) -> str:
+    """Build a skeleton callout block for a new meeting."""
+    display_title = re.sub(r'^\d{4}-\d{2}-\d{2} - ', '', stem)
+    stem_esc = stem.replace('|', '\\|')
+    title_esc = display_title.replace('|', '\\|')
+    time_str = format_time_from_iso(fm.get('start', ''))
+    return (
+        f'> [!tip]- [[{stem_esc}\\|{title_esc}]] ({time_str})\n'
+        f'> **Previous meetings:**\n'
+        f'> - *(gathering context...)*\n'
+        f'>\n'
+        f'> **Suggested topics:**\n'
+        f'> - {_PLACEHOLDER_MARKER}'
+    )
+
+
+def sync_meeting_prep_section(
+    content: str,
+    valid_stems: Set[str],
+    stale_stems: Set[str],
+    meeting_rows: List[Tuple[str, str, Dict]],
+) -> str:
+    """Sync the Meeting Preparation section: remove stale callouts, add placeholders for new meetings.
+
+    Returns the modified daily note content.  No-ops if the section doesn't exist yet.
+    """
+    section_heading = '# Meeting Preparation'
+    heading_idx = content.find(section_heading)
+    if heading_idx == -1:
+        return content
+
+    # Locate the section body (from after heading line to next # heading or EOF)
+    after_heading = heading_idx + len(section_heading)
+    next_heading = content.find('\n#', after_heading)
+    section_end = next_heading if next_heading != -1 else len(content)
+    section_body = content[after_heading:section_end]
+
+    # Parse existing callout blocks
+    blocks = _split_callout_blocks(section_body)
+    existing_stems = {stem for stem, _ in blocks}
+
+    stems_to_remove = stale_stems & existing_stems
+    stems_to_add = valid_stems - existing_stems
+
+    if not stems_to_remove and not stems_to_add:
+        return content
+
+    # Build stem->fm lookup from meeting_rows for placeholder generation
+    fm_by_stem = {stem: fm for _, stem, fm in meeting_rows}
+
+    # Remove stale blocks and rebuild section body
+    new_blocks: List[str] = []
+    for stem, block_text in blocks:
+        if stem not in stems_to_remove:
+            new_blocks.append(block_text)
+
+    # Insert placeholders for new meetings at correct time-sorted position
+    for _, stem, fm in meeting_rows:
+        if stem not in stems_to_add:
+            continue
+        placeholder = _build_placeholder_callout(stem, fm_by_stem.get(stem, fm))
+        start_iso = fm.get('start', '')
+        # Find insertion index: after all blocks whose meeting starts before this one
+        insert_at = len(new_blocks)
+        for i, block_text in enumerate(new_blocks):
+            header_match = _CALLOUT_HEADER_RE.search(block_text)
+            if header_match:
+                block_stem = header_match.group(1).strip()
+                block_fm = fm_by_stem.get(block_stem, {})
+                if block_fm.get('start', '') > start_iso:
+                    insert_at = i
+                    break
+        new_blocks.insert(insert_at, placeholder)
+
+    new_section_body = '\n'.join(b.rstrip('\n') for b in new_blocks)
+    if new_section_body:
+        new_section_body = '\n\n' + new_section_body + '\n'
+    else:
+        new_section_body = '\n'
+
+    new_content = content[:after_heading] + new_section_body + content[section_end:]
+
+    # Report actions
+    for stem in stems_to_remove:
+        display = re.sub(r'^\d{4}-\d{2}-\d{2} - ', '', stem)
+        print(f'  🗑️  Removed callout for cancelled meeting: {display}')
+    for stem in stems_to_add:
+        display = re.sub(r'^\d{4}-\d{2}-\d{2} - ', '', stem)
+        print(f'  📋 Added placeholder callout for new meeting: {display}')
+
+    return new_content
+
+
 def meeting_has_user_content(meeting_file: Path) -> bool:
     """Return True if the ## Actions section has any user content."""
     if not meeting_file.exists():
@@ -778,6 +896,8 @@ def update_daily_note(
         meeting_rows.sort(key=lambda x: x[0])
         section = '# 📅 Meetings\n\n' + build_meetings_table(meeting_rows)
         content = content.rstrip() + '\n\n' + section + '\n'
+
+    content = sync_meeting_prep_section(content, all_stems, stale_stems, meeting_rows)
 
     daily_note_file.write_text(content)
     print(f'\n✓ Updated daily note: {daily_note_file.name}')
