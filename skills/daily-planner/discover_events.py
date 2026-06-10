@@ -152,10 +152,10 @@ def should_skip_event(event: Dict, user_emails: Set[str]) -> bool:
         if not (user_is_attendee or user_is_owner):
             return True
 
-    # User has not accepted
+    # User has not accepted (tentative/"maybe" is allowed)
     for attendee in attendees:
         if attendee.get('email', '').lower() in user_emails:
-            if attendee.get('responseStatus') not in ('accepted',):
+            if attendee.get('responseStatus') not in ('accepted', 'tentative'):
                 return True
 
     # No attendees at all, or only the user themselves

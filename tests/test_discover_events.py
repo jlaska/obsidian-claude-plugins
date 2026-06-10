@@ -182,7 +182,7 @@ class TestShouldSkipEvent:
         }
         assert discover_events.should_skip_event(event, USER_EMAILS) is True
 
-    def test_skips_tentative(self):
+    def test_keeps_tentative(self):
         event = {
             "summary": "Maybe",
             "status": "confirmed",
@@ -192,7 +192,7 @@ class TestShouldSkipEvent:
                 {"email": "other@work.example.com", "responseStatus": "accepted"},
             ],
         }
-        assert discover_events.should_skip_event(event, USER_EMAILS) is True
+        assert discover_events.should_skip_event(event, USER_EMAILS) is False
 
 
 class TestMergeEvents:

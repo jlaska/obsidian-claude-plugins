@@ -152,12 +152,12 @@ def should_skip_event(event: Dict, user_emails: Optional[Set[str]] = None) -> bo
     if event.get('status') == 'cancelled':
         return True
 
-    # Skip if user hasn't accepted (only create notes for accepted meetings)
+    # Skip if user hasn't accepted or marked maybe (tentative is allowed)
     attendees = event.get('attendees', [])
     for attendee in attendees:
         if attendee.get('email') in user_emails:
-            if attendee.get('responseStatus') != 'accepted':
-                return True  # Skip - only create notes for accepted meetings
+            if attendee.get('responseStatus') not in ('accepted', 'tentative'):
+                return True  # Skip - only create notes for accepted/tentative meetings
 
     # Skip if no attendees or only yourself
     if not attendees:
