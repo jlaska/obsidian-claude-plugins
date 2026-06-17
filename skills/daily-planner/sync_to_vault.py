@@ -771,7 +771,7 @@ def sync_meeting_prep_section(
                     break
         new_blocks.insert(insert_at, placeholder)
 
-    new_section_body = '\n'.join(b.rstrip('\n') for b in new_blocks)
+    new_section_body = '\n\n'.join(b.rstrip('\n') for b in new_blocks)
     if new_section_body:
         new_section_body = '\n\n' + new_section_body + '\n'
     else:
