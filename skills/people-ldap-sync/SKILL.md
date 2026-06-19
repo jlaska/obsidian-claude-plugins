@@ -1,6 +1,6 @@
 ---
-name: people-enrichment
-description: Enrich Person files in Obsidian vault with Red Hat employee data from LDAP (job titles, locations, email, mobile)
+name: people-ldap-sync
+description: Batch-sync Red Hat LDAP directory data (job titles, locations, email, mobile) into Obsidian People note frontmatter fields
 user-invocable: true
 allowed-tools:
   - Read
@@ -9,13 +9,13 @@ allowed-tools:
   - Write
 ---
 
-# People Enrichment
+# People LDAP Sync
 
-Enriches Person files in Obsidian vault with Red Hat employee data from LDAP, including job titles, locations, email addresses, and mobile numbers.
+Batch-syncs Red Hat LDAP directory data into Obsidian People note frontmatter fields, including job titles, office locations, email addresses, and mobile numbers.
 
 ## When to Use
 
-Invoke `/people-enrichment` when:
+Invoke `/people-ldap-sync` when:
 - You want to bulk-update People files with current Red Hat employee data
 - You've created new Person files and need to populate employee information
 - You need to refresh/update employee information for existing contacts
@@ -58,17 +58,17 @@ Execute the enrichment script with options:
 
 **Full Enrichment:**
 ```bash
-uv run --with pyyaml skills/people-enrichment/enrich_people.py "<vault_root>/PEOPLE"
+uv run --with pyyaml skills/people-ldap-sync/enrich_people.py "<vault_root>/PEOPLE"
 ```
 
 **Dry Run (Preview Changes):**
 ```bash
-uv run --with pyyaml skills/people-enrichment/enrich_people.py "<vault_root>/PEOPLE" --dry-run
+uv run --with pyyaml skills/people-ldap-sync/enrich_people.py "<vault_root>/PEOPLE" --dry-run
 ```
 
 **Test Mode (First N Files):**
 ```bash
-uv run --with pyyaml skills/people-enrichment/enrich_people.py "<vault_root>/PEOPLE" --limit 10
+uv run --with pyyaml skills/people-ldap-sync/enrich_people.py "<vault_root>/PEOPLE" --limit 10
 ```
 
 ### 4. Review Results
@@ -161,6 +161,7 @@ For these cases, manually verify and update the person file if needed. The scrip
 
 ## Related Skills
 
+- **people-research**: Single-person interactive research using LinkedIn, GitHub, and web search — use for external contacts or deep dossier generation
 - **obsidian-vault-discovery**: Used to discover vault configuration
 - **daily-planner**: Uses People files for attendee matching in meetings
 - **obsidian-vault-setup**: Creates PEOPLE/ directory structure

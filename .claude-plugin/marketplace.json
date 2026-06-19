@@ -18,11 +18,12 @@
         "./skills/obsidian-vault-discovery",
         "./skills/daily-planner",
         "./skills/obsidian-vault-setup",
-        "./skills/people-enrichment",
+        "./skills/people-ldap-sync",
         "./skills/youtube-summarizer",
         "./skills/obsidian-cli",
         "./skills/obsidian-vault-intelligence",
-        "./skills/meeting-summarizer"
+        "./skills/meeting-summarizer",
+        "./skills/people-research"
       ]
     }
   ]
