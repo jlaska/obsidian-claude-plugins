@@ -20,6 +20,7 @@
         "./skills/obsidian-vault-setup",
         "./skills/people-ldap-sync",
         "./skills/youtube-summarizer",
+        "./skills/article-summarizer",
         "./skills/obsidian-cli",
         "./skills/obsidian-vault-intelligence",
         "./skills/meeting-summarizer",
