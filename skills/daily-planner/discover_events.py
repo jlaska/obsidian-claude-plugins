@@ -131,7 +131,7 @@ def merge_events(event_lists: List[List[Dict]]) -> List[Dict]:
     return merged
 
 
-def should_skip_event(event: Dict, user_emails: Set[str]) -> bool:
+def should_skip_event(event: Dict, user_emails: Set[str], include_declined: bool = False) -> bool:
     """Return True if this event should be excluded (not a real meeting)."""
     # Working location events
     if event.get('eventType') == 'workingLocation':
@@ -152,11 +152,12 @@ def should_skip_event(event: Dict, user_emails: Set[str]) -> bool:
         if not (user_is_attendee or user_is_owner):
             return True
 
-    # User has not accepted (tentative/"maybe" is allowed)
-    for attendee in attendees:
-        if attendee.get('email', '').lower() in user_emails:
-            if attendee.get('responseStatus') not in ('accepted', 'tentative'):
-                return True
+    # Skip only explicitly declined events; needsAction/tentative are included
+    if not include_declined:
+        for attendee in attendees:
+            if attendee.get('email', '').lower() in user_emails:
+                if attendee.get('responseStatus') == 'declined':
+                    return True
 
     # No attendees at all, or only the user themselves
     if not attendees:
@@ -173,9 +174,9 @@ def should_skip_event(event: Dict, user_emails: Set[str]) -> bool:
     return False
 
 
-def filter_events(events: List[Dict], user_emails: Set[str]) -> List[Dict]:
+def filter_events(events: List[Dict], user_emails: Set[str], include_declined: bool = False) -> List[Dict]:
     """Apply all filtering rules to a list of events."""
-    return [e for e in events if not should_skip_event(e, user_emails)]
+    return [e for e in events if not should_skip_event(e, user_emails, include_declined=include_declined)]
 
 
 def load_user_emails_from_self_json(path: str) -> Set[str]:
@@ -195,6 +196,7 @@ def discover_events(
     cache_dir: Optional[Path] = None,
     calendars: Optional[List[str]] = None,
     all_calendars: bool = False,
+    include_declined: bool = False,
 ) -> List[Dict]:
     """Discover, fetch, merge, and filter calendar events.
 
@@ -204,6 +206,7 @@ def discover_events(
         cache_dir: Optional directory to cache raw per-account JSON files
         calendars: Optional list of calendar IDs to include (default: primary only)
         all_calendars: Fetch all visible calendars (overrides calendars=)
+        include_declined: Include events the user declined (default: False)
 
     Returns:
         List of filtered calendar event dicts
@@ -228,7 +231,7 @@ def discover_events(
             all_event_lists.append(events)
 
     merged = merge_events(all_event_lists)
-    filtered = filter_events(merged, user_emails)
+    filtered = filter_events(merged, user_emails, include_declined=include_declined)
     return filtered
 
 
@@ -255,6 +258,11 @@ def main():
         '--all-calendars',
         action='store_true',
         help='Fetch events from all visible calendars (overrides --calendars)',
+    )
+    parser.add_argument(
+        '--include-declined',
+        action='store_true',
+        help='Include events the user explicitly declined (default: skip declined)',
     )
     args = parser.parse_args()
 
@@ -284,6 +292,7 @@ def main():
         cache_dir=cache_dir,
         calendars=calendars,
         all_calendars=args.all_calendars,
+        include_declined=args.include_declined,
     )
     print(json.dumps(events, indent=2))
 
