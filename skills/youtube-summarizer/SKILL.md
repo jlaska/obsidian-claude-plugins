@@ -9,6 +9,7 @@ allowed-tools:
   - Bash
   - Write
   - Edit
+  - AskUserQuestion
 ---
 
 # YouTube Summary
@@ -202,7 +203,24 @@ python3 skills/youtube-summarizer/fetch_youtube.py "<vault_root>" "<youtube_url>
 
 The script injects the summary, takeaways, tags, and vault connections into the note's frontmatter and body sections.
 
-### 9. Add Daily Note Breadcrumb
+### 9. Offer to Add Research to Daily Journal
+
+After the summary is saved, use AskUserQuestion to ask whether to add research notes to today's daily journal:
+
+- **Question**: "Add research notes from this video to today's daily journal?"
+- **Options**:
+  - "Yes — add key takeaways and reflections to Morning thoughts"
+  - "No — just the breadcrumb link"
+
+If the user selects **Yes**, write a journal entry in the `## Morning thoughts` (or `## Evening reflection`, depending on time of day — use morning before 14:00, evening after) subsection under `# 📓 Journal`. The entry should include:
+
+1. A one-sentence intro linking to the reference note with `[[wiki-link]]`
+2. A "Key ideas that stuck with me" bulleted list — 5-8 of the most resonant takeaways, written in the user's voice (first person, reflective), not copy-pasted from the summary
+3. A closing paragraph connecting themes to other vault notes found in Step 5, using `[[wiki-links]]`
+
+This is a *journal entry*, not a summary duplicate — it should read like personal reflection, not a report.
+
+### 10. Add Daily Note Breadcrumb
 
 Add a breadcrumb to today's daily note so there's a record of the video being summarized.
 
@@ -242,13 +260,14 @@ Where:
 - `RELATIVE_NOTE_PATH` is `note_path` with the `vault_root/` prefix stripped (e.g., `REFERENCES/2009/10-October/2009-10-25 - Video Title`)
 - `TITLE`, `CHANNEL`, `DURATION` come from the Step 2 JSON output
 
-### 10. Confirm to User
+### 11. Confirm to User
 
 Report completion:
 - Note location (relative to vault root)
 - Transcript location (relative to vault root)
 - First few lines of the generated summary
 - Daily note breadcrumb: added (or "already present" if duplicate was detected)
+- Daily journal entry: added (or "skipped" if user declined)
 
 ## Note Format
 
