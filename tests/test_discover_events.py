@@ -182,6 +182,54 @@ class TestShouldSkipEvent:
         }
         assert discover_events.should_skip_event(event, USER_EMAILS) is True
 
+    def test_keeps_self_only_with_conference_data(self):
+        event = {
+            "summary": "Interview with Someone",
+            "status": "confirmed",
+            "eventType": "default",
+            "attendees": [
+                {"email": "testuser@work.example.com", "responseStatus": "accepted", "self": True}
+            ],
+            "conferenceData": {
+                "conferenceSolution": {"key": {"type": "hangoutsMeet"}},
+                "entryPoints": [{"entryPointType": "video", "uri": "https://meet.google.com/abc-defg-hij"}],
+            },
+        }
+        assert discover_events.should_skip_event(event, USER_EMAILS) is False
+
+    def test_keeps_self_only_with_hangout_link(self):
+        event = {
+            "summary": "Interview with Someone",
+            "status": "confirmed",
+            "eventType": "default",
+            "attendees": [
+                {"email": "testuser@work.example.com", "responseStatus": "accepted", "self": True}
+            ],
+            "hangoutLink": "https://meet.google.com/abc-defg-hij",
+        }
+        assert discover_events.should_skip_event(event, USER_EMAILS) is False
+
+    def test_keeps_no_attendees_with_meeting_link(self):
+        event = {
+            "summary": "External Interview",
+            "status": "confirmed",
+            "eventType": "default",
+            "attendees": [],
+            "hangoutLink": "https://meet.google.com/abc-defg-hij",
+        }
+        assert discover_events.should_skip_event(event, USER_EMAILS) is False
+
+    def test_still_skips_self_only_without_meeting_link(self):
+        event = {
+            "summary": "Focus Time",
+            "status": "confirmed",
+            "eventType": "default",
+            "attendees": [
+                {"email": "testuser@work.example.com", "responseStatus": "accepted", "self": True}
+            ],
+        }
+        assert discover_events.should_skip_event(event, USER_EMAILS) is True
+
     def test_keeps_tentative(self):
         event = {
             "summary": "Maybe",

@@ -160,10 +160,12 @@ def should_skip_event(event: Dict, user_emails: Set[str], include_declined: bool
                     return True
 
     # No attendees at all, or only the user themselves
-    if not attendees:
+    # Exception: keep events with a video meeting link (Google Meet, Zoom, etc.)
+    has_meeting_link = bool(event.get('conferenceData') or event.get('hangoutLink'))
+    if not attendees and not has_meeting_link:
         return True
     non_self = [a for a in attendees if a.get('email', '').lower() not in user_emails]
-    if not non_self:
+    if not non_self and not has_meeting_link:
         return True
 
     # Broadcast events (user can't see or invite others)
