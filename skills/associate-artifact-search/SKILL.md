@@ -24,7 +24,7 @@ If the user provided a person name, attempt to look up their People note for pre
 
 3. Parse YAML frontmatter and extract:
    - **GitHub username**: From the `social` list, find a URL matching `https://github.com/<user>` and extract `<user>`
-   - **GitLab username**: From the `social` list, find a URL matching `https://gitlab.com/<user>` or `https://gitlab.cee.redhat.com/<user>` and extract `<user>`
+   - **GitLab username**: From the `social` list, find a URL matching `https://gitlab.com/<user>` or `https://gitlab.cee.redhat.com/<user>` and extract `<user>`. If no GitLab URL is in the `social` list but the email is `@redhat.com`, derive the GitLab username from the email prefix (e.g., `jbalunas@redhat.com` → `jbalunas`, defaulting to `https://gitlab.cee.redhat.com/jbalunas`)
    - **Email**: Read the `mail` field (Red Hat contacts) or `email` field (external contacts)
    - **Jira identity**: Use the same email value (search_jira.py resolves email → account ID)
    - **Google email**: Use the same email value

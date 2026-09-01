@@ -51,6 +51,7 @@ def _mock_ldap_result(ldif_text):
 
 LDIF_SINGLE_SOCIAL = """\
 dn: uid=jdoe,ou=users,dc=redhat,dc=com
+uid: jdoe
 title: Senior Engineer
 mail: jdoe@redhat.com
 rhatSocialURL: https://github.com/jdoe
@@ -59,6 +60,7 @@ rhatSocialURL: https://github.com/jdoe
 
 LDIF_MULTIPLE_SOCIAL = """\
 dn: uid=jdoe,ou=users,dc=redhat,dc=com
+uid: jdoe
 title: Senior Engineer
 mail: jdoe@redhat.com
 rhatSocialURL: https://github.com/jdoe
@@ -69,6 +71,7 @@ rhatSocialURL: https://twitter.com/jdoe
 
 LDIF_NO_SOCIAL = """\
 dn: uid=jdoe,ou=users,dc=redhat,dc=com
+uid: jdoe
 title: Senior Engineer
 mail: jdoe@redhat.com
 rhatLocation: RH - Raleigh
@@ -77,6 +80,7 @@ rhatLocation: RH - Raleigh
 
 LDIF_MIXED_FIELDS = """\
 dn: uid=jdoe,ou=users,dc=redhat,dc=com
+uid: jdoe
 title: Principal Software Engineer
 rhatLocation: Remote US NC
 mail: jdoe@redhat.com
@@ -102,12 +106,14 @@ class TestLdapSocialParsing:
         with patch("enrich_people.subprocess.run", return_value=_mock_ldap_result(LDIF_SINGLE_SOCIAL)):
             data = self.enricher.get_ldap_data("jdoe@redhat.com")
         assert data is not None
+        assert data["uid"] == "jdoe"
         assert data["social"] == ["https://github.com/jdoe"]
 
     def test_multiple_social_urls(self):
         with patch("enrich_people.subprocess.run", return_value=_mock_ldap_result(LDIF_MULTIPLE_SOCIAL)):
             data = self.enricher.get_ldap_data("jdoe@redhat.com")
         assert data is not None
+        assert data["uid"] == "jdoe"
         assert data["social"] == [
             "https://github.com/jdoe",
             "https://gitlab.cee.redhat.com/jdoe",
@@ -118,12 +124,14 @@ class TestLdapSocialParsing:
         with patch("enrich_people.subprocess.run", return_value=_mock_ldap_result(LDIF_NO_SOCIAL)):
             data = self.enricher.get_ldap_data("jdoe@redhat.com")
         assert data is not None
+        assert data["uid"] == "jdoe"
         assert "social" not in data
 
     def test_mixed_fields(self):
         with patch("enrich_people.subprocess.run", return_value=_mock_ldap_result(LDIF_MIXED_FIELDS)):
             data = self.enricher.get_ldap_data("jdoe@redhat.com")
         assert data is not None
+        assert data["uid"] == "jdoe"
         assert data["title"] == "Principal Software Engineer"
         assert data["rhatLocation"] == "Remote US NC"
         assert data["mail"] == "jdoe@redhat.com"
@@ -152,6 +160,26 @@ class TestSocialMerge:
     LDAP_NO_SOCIAL = {
         "title": "Engineer",
         "mail": "jdoe@redhat.com",
+    }
+
+    LDAP_WITH_UID = {
+        "uid": "jdoe",
+        "title": "Engineer",
+        "mail": "jdoe@redhat.com",
+    }
+
+    LDAP_WITH_UID_AND_SOCIAL = {
+        "uid": "jdoe",
+        "title": "Engineer",
+        "mail": "jdoe@redhat.com",
+        "social": ["https://github.com/jdoe"],
+    }
+
+    LDAP_WITH_UID_AND_GITLAB_SOCIAL = {
+        "uid": "jdoe",
+        "title": "Engineer",
+        "mail": "jdoe@redhat.com",
+        "social": ["https://github.com/jdoe", "https://gitlab.cee.redhat.com/jdoe"],
     }
 
     def _enrich(self, tmp_path, frontmatter_yaml, ldap_data):
@@ -208,6 +236,26 @@ class TestSocialMerge:
         assert "https://personal-blog.com/jdoe" in fm["social"]
         assert "https://github.com/jdoe" in fm["social"]
         assert "https://twitter.com/jdoe" in fm["social"]
+
+    def test_uid_constructs_gitlab_url(self, tmp_path):
+        fm_yaml = "mail: jdoe@redhat.com\ntags:\n  - People\n"
+        result, fm, _ = self._enrich(tmp_path, fm_yaml, self.LDAP_WITH_UID)
+        assert result is True
+        assert "https://gitlab.cee.redhat.com/jdoe" in fm["social"]
+
+    def test_uid_gitlab_url_appended_to_existing_social(self, tmp_path):
+        fm_yaml = "mail: jdoe@redhat.com\ntags:\n  - People\n"
+        result, fm, _ = self._enrich(tmp_path, fm_yaml, self.LDAP_WITH_UID_AND_SOCIAL)
+        assert result is True
+        assert fm["social"] == [
+            "https://github.com/jdoe",
+            "https://gitlab.cee.redhat.com/jdoe",
+        ]
+
+    def test_uid_gitlab_url_not_duplicated(self, tmp_path):
+        fm_yaml = "mail: jdoe@redhat.com\nsocial:\n  - https://gitlab.cee.redhat.com/jdoe\ntags:\n  - People\ntitle: Engineer\n"
+        result, fm, _ = self._enrich(tmp_path, fm_yaml, self.LDAP_WITH_UID_AND_GITLAB_SOCIAL)
+        assert fm["social"].count("https://gitlab.cee.redhat.com/jdoe") == 1
 
 
 # ===========================================================================
