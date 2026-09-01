@@ -125,8 +125,7 @@ Classify as Red Hat if: email is `@redhat.com`, the company is Red Hat, or the u
 
 If Red Hat and email is known:
 ```bash
-ldapsearch -x -H ldaps://ldap.corp.redhat.com -b dc=redhat,dc=com \
-  "(mail=<email>)" title rhatLocation mail mobile
+ldapsearch "(mail=<email>)" title rhatLocation mail mobile
 ```
 
 If Red Hat but email is unknown:

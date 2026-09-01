@@ -109,9 +109,6 @@ class PersonEnricher:
             result = subprocess.run(
                 [
                     'ldapsearch',
-                    '-x',
-                    '-H', 'ldaps://ldap.corp.redhat.com',
-                    '-b', 'dc=redhat,dc=com',
                     f'(mail={email})',
                     'title', 'rhatLocation', 'mail', 'mobile', 'rhatSocialURL'
                 ],

@@ -142,9 +142,9 @@ social:
 
 - Python 3.7+
 - `pyyaml` package (automatically installed by `uv`)
-- `ldapsearch` command (available on macOS/Linux)
+- `ldapsearch` command (available on macOS/Linux), configured via `~/.ldaprc`
 - `gog` command (Google CLI tool)
-- Access to Red Hat LDAP server (ldaps://ldap.corp.redhat.com)
+- Valid Kerberos ticket for LDAP GSSAPI authentication
 
 ## Not Found Cases
 
