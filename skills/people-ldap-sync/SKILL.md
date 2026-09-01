@@ -1,6 +1,6 @@
 ---
 name: people-ldap-sync
-description: Batch-sync Red Hat LDAP directory data (job titles, locations, email, mobile) into Obsidian People note frontmatter fields
+description: Batch-sync Red Hat LDAP directory data (job titles, locations, email, mobile, social profile URLs) into Obsidian People note frontmatter fields
 user-invocable: true
 allowed-tools:
   - Read
@@ -11,7 +11,7 @@ allowed-tools:
 
 # People LDAP Sync
 
-Batch-syncs Red Hat LDAP directory data into Obsidian People note frontmatter fields, including job titles, office locations, email addresses, and mobile numbers.
+Batch-syncs Red Hat LDAP directory data into Obsidian People note frontmatter fields, including job titles, office locations, email addresses, mobile numbers, and social profile URLs.
 
 ## When to Use
 
@@ -26,6 +26,7 @@ Invoke `/people-ldap-sync` when:
 - **Email Discovery**: Searches for employees via Google People Search when email is not in frontmatter
 - **LDAP Enrichment**: Queries Red Hat LDAP for employee data
 - **Field Updates**: Adds/updates `title`, `rhatLocation`, `mail`, `mobile`
+- **Social URL Discovery**: Extracts social profile URLs (GitHub, GitLab, etc.) from LDAP `rhatSocialURL` attribute
 - **Field Normalization**: Renames existing `email` field to `mail` for consistency
 - **Preservation**: Maintains all original frontmatter fields and body content
 - **Reporting**: Generates summary of updates and list of not-found people for manual review
@@ -94,6 +95,7 @@ The enrichment follows this cascade:
 | `rhatLocation` | LDAP | Red Hat office location | "RH - Raleigh" or "Remote US NC" |
 | `mail` | LDAP | Email address | "jdoe@redhat.com" |
 | `mobile` | LDAP | Mobile phone number | "+19195551234" |
+| `social` | LDAP (`rhatSocialURL`) | Social profile URLs (GitHub, GitLab, etc.) | `["https://github.com/jdoe"]` |
 
 ## Original Fields Preserved
 
@@ -102,6 +104,7 @@ All original frontmatter fields are preserved:
 - `location`
 - `aliases`
 - `tags`
+- `social` (manually-added URLs are preserved; LDAP URLs are merged in)
 - Any other custom fields
 
 ## Example Output
@@ -130,6 +133,8 @@ title: Senior Software Engineer
 rhatLocation: RH - Raleigh
 mail: jdoe@redhat.com
 mobile: '+19195551234'
+social:
+  - https://github.com/jdoe
 ---
 ```
 

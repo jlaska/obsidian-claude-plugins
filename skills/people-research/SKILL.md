@@ -93,7 +93,7 @@ Extract:
 - Full work history (company, role, start/end dates)
 - Education (school, degree, graduation year)
 - Location (city, state/country)
-- LinkedIn username (for `aliases` frontmatter field)
+- LinkedIn username (for `aliases` frontmatter field). Construct `https://www.linkedin.com/in/<linkedin_username>` for inclusion in the `social` frontmatter list.
 - Profile URN (for `mcp__linkedin__get_company_profile` if needed)
 
 **Optional:** If the company is unfamiliar or important to context, call `mcp__linkedin__get_company_profile` to get company description, size, and specialties — use for the "Role & Organization" section.
@@ -117,7 +117,7 @@ Extract:
 - Pinned/starred repositories (name, stars, description) — especially any with 1k+ stars
 - Organization memberships
 
-Note any blog, podcast, YouTube channel, or conference talk credits for the Links section.
+Note any blog, podcast, YouTube channel, or conference talk credits for the Links section. If a GitHub username is confirmed, construct `https://github.com/<username>` for inclusion in the `social` frontmatter list.
 
 ### Step 7 — Deep Research: LDAP (Red Hat contacts only)
 
@@ -148,6 +148,8 @@ Parse LDIF output line-by-line for: `title:`, `rhatLocation:`, `mail:`, `mobile:
 - **File exists with `%% section:dossier %%` markers** → replace dossier content, update frontmatter fields
 - **File exists without dossier markers** → update empty sections only; if sections have existing hand-written content, report what's new and let the user decide
 
+When updating an existing file, merge newly discovered social URLs into the existing `social` list without removing manually-added entries. Append only URLs not already present.
+
 **Name conflict check:** If the file exists but frontmatter shows a different company or email than the researched person, stop and alert the user. Suggest `<First Last> (<Company>).md` as an alternative filename.
 
 ---
@@ -166,6 +168,9 @@ title: <current job title>
 aliases:
   - <linkedin_username>
   - <github_username if different from linkedin_username>
+social:
+  - https://github.com/<username>
+  - https://www.linkedin.com/in/<username>
 tags:
   - type/person
   - external
@@ -266,7 +271,9 @@ title: <from LDAP>
 rhatLocation: <from LDAP>
 mail: <from LDAP>
 mobile: <from LDAP if present>
-linkedin: <username if found>
+social:
+  - https://github.com/<username>
+  - https://www.linkedin.com/in/<username>
 ---
 
 # Family Info

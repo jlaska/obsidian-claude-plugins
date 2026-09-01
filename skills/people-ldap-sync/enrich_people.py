@@ -98,11 +98,12 @@ class PersonEnricher:
             print(f"  ⚠️  gog search failed for {name}: {e}", file=sys.stderr)
             return None
 
-    def get_ldap_data(self, email: str) -> Optional[Dict[str, str]]:
+    def get_ldap_data(self, email: str) -> Optional[Dict]:
         """Query LDAP for person's data by email.
 
         Returns:
-            Dict with keys: title, rhatLocation, mail, mobile (if available)
+            Dict with keys: title, rhatLocation, mail, mobile (str),
+            and social (list of URLs from rhatSocialURL, if available)
         """
         try:
             result = subprocess.run(
@@ -112,7 +113,7 @@ class PersonEnricher:
                     '-H', 'ldaps://ldap.corp.redhat.com',
                     '-b', 'dc=redhat,dc=com',
                     f'(mail={email})',
-                    'title', 'rhatLocation', 'mail', 'mobile'
+                    'title', 'rhatLocation', 'mail', 'mobile', 'rhatSocialURL'
                 ],
                 capture_output=True,
                 text=True,
@@ -134,6 +135,8 @@ class PersonEnricher:
                     data['mail'] = line[6:]
                 elif line.startswith('mobile: '):
                     data['mobile'] = line[8:]
+                elif line.startswith('rhatSocialURL: '):
+                    data.setdefault('social', []).append(line[15:])
 
             # Only return if we found at least mail
             if 'mail' in data:
@@ -200,6 +203,15 @@ class PersonEnricher:
                             changes.append(f"{field} updated")
                         else:
                             changes.append(f"{field} added")
+
+            if 'social' in ldap_data and ldap_data['social']:
+                existing_social = frontmatter.get('social', []) or []
+                if isinstance(existing_social, str):
+                    existing_social = [existing_social]
+                new_urls = [url for url in ldap_data['social'] if url not in existing_social]
+                if new_urls:
+                    frontmatter['social'] = existing_social + new_urls
+                    changes.append(f"social: +{len(new_urls)} URLs")
 
             if not changes:
                 print(f"  ✓ No changes needed: {name}")
