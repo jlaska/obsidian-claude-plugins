@@ -110,7 +110,7 @@ class PersonEnricher:
                 [
                     'ldapsearch',
                     f'(mail={email})',
-                    'uid', 'title', 'rhatLocation', 'mail', 'mobile', 'rhatSocialURL'
+                    'title', 'rhatLocation', 'mail', 'mobile', 'rhatSocialURL'
                 ],
                 capture_output=True,
                 text=True,
@@ -124,9 +124,7 @@ class PersonEnricher:
             data = {}
             for line in result.stdout.split('\n'):
                 line = line.strip()
-                if line.startswith('uid: '):
-                    data['uid'] = line[5:]
-                elif line.startswith('title: '):
+                if line.startswith('title: '):
                     data['title'] = line[7:]
                 elif line.startswith('rhatLocation: '):
                     data['rhatLocation'] = line[14:]
@@ -202,13 +200,6 @@ class PersonEnricher:
                             changes.append(f"{field} updated")
                         else:
                             changes.append(f"{field} added")
-
-            # Build GitLab URL from uid
-            if 'uid' in ldap_data:
-                gitlab_url = f"https://gitlab.cee.redhat.com/{ldap_data['uid']}"
-                ldap_data.setdefault('social', [])
-                if gitlab_url not in ldap_data['social']:
-                    ldap_data['social'].append(gitlab_url)
 
             if 'social' in ldap_data and ldap_data['social']:
                 existing_social = frontmatter.get('social', []) or []
