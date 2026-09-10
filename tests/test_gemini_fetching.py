@@ -202,14 +202,24 @@ class TestFetchGeminiNotesTab:
     def test_uses_correct_gog_flags(self):
         with patch.object(stv, '_run', return_value=None) as mock_run:
             stv.fetch_gemini_notes_tab('docid123')
-        cmd = mock_run.call_args[0][0]
+        cmd = mock_run.call_args_list[0][0][0]
         assert '--tab' in cmd
-        assert 'Notes' in cmd
+        assert 'full notes' in cmd
         assert '--json' in cmd
         assert '--results-only' in cmd
 
+    def test_tries_tabs_in_fallback_order(self):
+        calls = []
+        def capture_run(cmd, **kwargs):
+            calls.append(cmd)
+            return None
+        with patch.object(stv, '_run', side_effect=capture_run):
+            stv.fetch_gemini_notes_tab('docid123')
+        tab_args = [c[c.index('--tab') + 1] for c in calls]
+        assert tab_args == ['full notes', 'quick notes', 'notes']
+
     def test_returns_none_when_notes_tab_body_empty(self):
-        doc = {"tabs": [{"tabProperties": {"title": "Notes"}, "documentTab": {"body": {"content": []}}}]}
+        doc = {"tabs": [{"tabProperties": {"title": "Full notes"}, "documentTab": {"body": {"content": []}}}]}
         with patch.object(stv, '_run', return_value=self._run_result(json.dumps(doc))):
             assert stv.fetch_gemini_notes_tab('docid123') is None
 

@@ -210,31 +210,41 @@ def _strip_gemini_notes_content(content: str) -> str:
     return content.strip()
 
 
+_GEMINI_NOTES_TAB_NAMES = ['full notes', 'quick notes', 'notes']
+
+
 def fetch_gemini_notes_tab(doc_id: str) -> Optional[str]:
-    """Fetch the 'Notes' tab from a Gemini Google Doc and return cleaned markdown."""
-    result = _run(
-        ['gog', 'docs', 'cat', '--tab', 'Notes', '--raw', '--json', '--results-only', doc_id],
-        timeout=30,
-    )
-    if not result or result.returncode != 0 or not result.stdout.strip():
-        return None
-    try:
-        doc = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return None
+    """Fetch the notes tab from a Gemini Google Doc and return cleaned markdown.
 
-    body = []
-    for tab in doc.get('tabs', []):
-        props = tab.get('tabProperties', {})
-        if props.get('title', '').lower() == 'notes':
-            body = tab.get('documentTab', {}).get('body', {}).get('content', [])
-            break
+    Tries tab names in order: "Full notes", "Quick notes", "Notes".
+    """
+    for tab_name in _GEMINI_NOTES_TAB_NAMES:
+        result = _run(
+            ['gog', 'docs', 'cat', '--tab', tab_name, '--raw', '--json', '--results-only', doc_id],
+            timeout=30,
+        )
+        if not result or result.returncode != 0 or not result.stdout.strip():
+            continue
+        try:
+            doc = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            continue
 
-    if not body:
-        return None
+        body = []
+        for tab in doc.get('tabs', []):
+            props = tab.get('tabProperties', {})
+            if props.get('title', '').lower() == tab_name:
+                body = tab.get('documentTab', {}).get('body', {}).get('content', [])
+                break
 
-    md = _body_content_to_markdown(body)
-    return _strip_gemini_notes_content(md) if md else None
+        if not body:
+            continue
+
+        md = _body_content_to_markdown(body)
+        if md:
+            return _strip_gemini_notes_content(md)
+
+    return None
 
 
 def update_meeting_with_gemini_notes(meeting_file: Path) -> bool:
@@ -255,6 +265,7 @@ def update_meeting_with_gemini_notes(meeting_file: Path) -> bool:
     print('  📝 Fetching Gemini notes...')
     notes_content = fetch_gemini_notes_tab(doc_id)
     if not notes_content:
+        print(f'  ⚠️  No notes tab found in Gemini doc: {gemini_url}')
         return False
     gemini_section = '## Notes by Gemini\n\n' + notes_content
     if '## Notes by Gemini' in content:
