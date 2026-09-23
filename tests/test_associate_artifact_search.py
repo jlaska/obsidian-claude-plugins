@@ -506,12 +506,14 @@ class TestSearchDrive:
         assert len(result["files"]) == 1
         assert result["files"][0]["last_modified_by_associate"] is True
 
-    def test_file_not_touched_by_associate_excluded(self):
+    def test_file_not_owned_by_associate_flags_correctly(self):
         associate = "alice@example.com"
         f = self._file(owner_email="other@example.com", modifier_email="third@example.com")
         with patch("search_gog.fetch_drive_page", return_value=self._mock_page([f])):
             result = search_gog.search_drive(associate, date(2025, 1, 1), date(2025, 1, 31), None)
-        assert len(result["files"]) == 0
+        assert len(result["files"]) == 1
+        assert result["files"][0]["owned_by_associate"] is False
+        assert result["files"][0]["last_modified_by_associate"] is False
 
     def test_associate_as_one_of_multiple_owners_included(self):
         associate = "alice@example.com"
@@ -615,7 +617,8 @@ class TestGogSkipFlags:
                 "--since", "2025-01-01", "--until", "2025-01-31", "--skip-drive"]
         gmail_data = {"sent_by_associate": [], "sent_to_associate": [],
                       "summary": {"sent_by_associate": 0, "sent_to_associate": 0, "unique_threads": 0}}
-        with patch("search_gog.search_gmail", return_value=gmail_data):
+        with patch("search_gog.search_gmail", return_value=gmail_data), \
+             patch("search_gog.resolve_display_name", return_value="alice"):
             result = _run_main(search_gog, argv, capsys=capsys)
         assert "drive" not in result
         assert "gmail" in result
@@ -623,7 +626,8 @@ class TestGogSkipFlags:
     def test_skip_gmail_omits_gmail_key(self, capsys):
         argv = ["search_gog.py", "--email", "alice@example.com",
                 "--since", "2025-01-01", "--until", "2025-01-31", "--skip-gmail"]
-        with patch("search_gog.search_drive", return_value={"files": [], "summary": {}}):
+        with patch("search_gog.search_drive", return_value={"files": [], "summary": {}}), \
+             patch("search_gog.resolve_display_name", return_value="alice"):
             result = _run_main(search_gog, argv, capsys=capsys)
         assert "gmail" not in result
         assert "drive" in result
