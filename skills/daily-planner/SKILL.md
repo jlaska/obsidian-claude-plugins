@@ -129,6 +129,50 @@ After Step 3, check stdout for lines beginning with `⚠️  Cancelled meeting f
 
 **Never delete a meeting file without explicit user confirmation.**
 
+### 6. Needs Attention
+
+Surface stale Jira items that need the user's attention.
+
+#### 6a. Gather Jira actions (scripted)
+
+Run the discovery script to query Jira for stale issues. The user must provide their Jira project keys.
+
+```bash
+python3 "$SKILL_BASE/discover_jira_actions.py" \
+  --self-json "$CACHE_DIR/self.json" \
+  --projects "FM,OME,FLD,ACM,FCN,HYPERSHELL,HYPERFLEET,HPSTRAT" \
+  --stale-days 7 \
+  > "$CACHE_DIR/jira_actions.json"
+```
+
+Ask the user for their project keys if not known. Adjust `--stale-days` if requested.
+
+#### 6b. AI triage and insert into daily note
+
+Read the JSON output from `$CACHE_DIR/jira_actions.json`. If `counts.total` is 0, skip this section entirely (no empty section in the daily note).
+
+For each action category with items, generate a grouped callout block with an AI-suggested action for each item. Insert or replace the `# ⚠️ Needs Attention` section in the daily note, positioned **above** `# 📅 Meetings`.
+
+**Callout format:**
+
+```markdown
+# ⚠️ Needs Attention
+
+> [!warning]- Stale Issues Assigned to You (N items)
+> - **[KEY-123](https://redhat.atlassian.net/browse/KEY-123)** — *Summary* (Status, N days stale)
+>   → **Update status or close if complete**
+
+> [!todo]- Follow-up on Issues You Created (N items)
+> - **[KEY-456](https://redhat.atlassian.net/browse/KEY-456)** — *Summary* (Status, assigned to Name, N days stale)
+>   → **Check in with assignee on blockers**
+```
+
+The `→ **bold text**` line is an AI-generated suggested action tailored to each item.
+
+**Section management:**
+- On first run: insert the section above `# 📅 Meetings`
+- On re-run: replace the existing `# ⚠️ Needs Attention` section content (fully regenerated each time — no user content to preserve)
+
 ---
 
 ## Script Reference
@@ -140,6 +184,7 @@ After Step 3, check stdout for lines beginning with `⚠️  Cancelled meeting f
 | `discover_events.py` | Calendar fetch + filter | `--self-json`, `--cache-dir`, `--calendars`, `--all-calendars` | JSON: filtered events array |
 | `sync_to_vault.py` | Meeting files + daily note | `--vault-root`, `--events-json`, `--self-json` | Vault files updated; stdout: status + warnings |
 | `gather_meeting_context.py` | Vault introspection for AI prep | `--vault-root`, `--self-json` | JSON: flat array of meetings, each with `is_first_run` |
+| `discover_jira_actions.py` | Stale Jira issue discovery | `--self-json`, `--projects`, `--stale-days` | JSON: stale assigned + stale created issues |
 | `vault_utils.py` | Shared utilities (library) | — imported by other scripts | — |
 
 All scripts support `--help` for usage details.
