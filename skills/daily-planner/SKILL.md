@@ -37,6 +37,7 @@ mkdir -p "$CACHE_DIR"
 
 VAULT_CONFIG=$("$SKILL_BASE/discover_vault.py" 2>/dev/null || python3 "$SKILL_BASE/discover_vault.py")
 VAULT_ROOT=$(echo "$VAULT_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin)['vault_root'])")
+DAILY_NOTE=$(echo "$VAULT_CONFIG" | python3 -c "import json,sys; print(json.load(sys.stdin)['today']['daily_note_absolute'])")
 
 SELF_JSON=$("$SKILL_BASE/discover_self.py" 2>/dev/null || python3 "$SKILL_BASE/discover_self.py")
 echo "$SELF_JSON" > "$CACHE_DIR/self.json"
@@ -149,7 +150,9 @@ Ask the user for their project keys if not known. Adjust `--stale-days` if reque
 
 #### 6b. AI triage and insert into daily note
 
-Read the JSON output from `$CACHE_DIR/jira_actions.json`. If `counts.total` is 0, skip this section entirely (no empty section in the daily note).
+Read the daily note at `$DAILY_NOTE` (the absolute path from Step 1) and the JSON output from `$CACHE_DIR/jira_actions.json`.
+
+If `counts.total` is 0, skip this step entirely (no empty section in the daily note).
 
 For each action category with items, generate a grouped callout block with an AI-suggested action for each item. Insert or replace the `# ⚠️ Needs Attention` section in the daily note, positioned **above** `# 📅 Meetings`.
 
@@ -171,10 +174,10 @@ The `→ **bold text**` line is an AI-generated suggested action tailored to eac
 
 **Section management:**
 
-First, read the daily note and check whether `# ⚠️ Needs Attention` already exists.
+Read `$DAILY_NOTE` and check whether `# ⚠️ Needs Attention` already exists.
 
-- **Section missing** (daily note created before template update): Use the `Edit` tool to insert the full section — heading, callout blocks, and a trailing `---` separator — immediately **before** the `# 📅 Meetings` line. Match the `old_string` to `# 📅 Meetings` and prepend the new section in `new_string`.
-- **Section exists**: Replace everything between `# ⚠️ Needs Attention` and the next `---` or `#` heading with the regenerated callout blocks. No user content to preserve — the section is fully regenerated each run.
+- **Section missing** (common — daily notes created before template update won't have it): Use the `Edit` tool on `$DAILY_NOTE` to insert the full section — heading, callout blocks, and a blank line — immediately **before** the `# 📅 Meetings` line. Set `old_string` to `# 📅 Meetings` and `new_string` to the new section text followed by `# 📅 Meetings`.
+- **Section exists**: Use the `Edit` tool on `$DAILY_NOTE` to replace everything from `# ⚠️ Needs Attention` up to (but not including) the next `#` heading with the regenerated section. No user content to preserve — fully regenerated each run.
 
 ---
 
