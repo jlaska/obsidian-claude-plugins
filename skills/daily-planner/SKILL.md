@@ -170,8 +170,11 @@ For each action category with items, generate a grouped callout block with an AI
 The `→ **bold text**` line is an AI-generated suggested action tailored to each item.
 
 **Section management:**
-- On first run: insert the section above `# 📅 Meetings`
-- On re-run: replace the existing `# ⚠️ Needs Attention` section content (fully regenerated each time — no user content to preserve)
+
+First, read the daily note and check whether `# ⚠️ Needs Attention` already exists.
+
+- **Section missing** (daily note created before template update): Use the `Edit` tool to insert the full section — heading, callout blocks, and a trailing `---` separator — immediately **before** the `# 📅 Meetings` line. Match the `old_string` to `# 📅 Meetings` and prepend the new section in `new_string`.
+- **Section exists**: Replace everything between `# ⚠️ Needs Attention` and the next `---` or `#` heading with the regenerated callout blocks. No user content to preserve — the section is fully regenerated each run.
 
 ---
 
