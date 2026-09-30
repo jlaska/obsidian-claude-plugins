@@ -108,20 +108,31 @@ def match_attendee_to_person(email: str, display_name: str, vault_root: Path) ->
     """Match calendar attendee email to a PEOPLE/ wikilink."""
     people_dir = vault_root / 'PEOPLE'
 
-    # 1. Email in frontmatter
+    # 1. Email in frontmatter (matches both 'mail:' and 'email:' fields)
     if email:
         result = _run(['grep', '-r', '-l', f'mail: {email}', str(people_dir)], timeout=5)
         if result and result.returncode == 0 and result.stdout.strip():
             person_file = Path(result.stdout.strip().split('\n')[0])
             return f'"[[{person_file.stem}]]"'
 
-    # 2. Filename match
+    # 2. Filename match (exact display name)
     if display_name:
         person_file = people_dir / f'{display_name}.md'
         if person_file.exists():
             return f'"[[{display_name}]]"'
 
-    # 3. gog people search
+    # 3. Derive name from email prefix (first.last@domain → First Last)
+    if email:
+        local_part = email.split('@')[0]
+        if '.' in local_part or '-' in local_part or '_' in local_part:
+            derived_name = ' '.join(
+                part.capitalize() for part in re.split(r'[.\-_]', local_part)
+            )
+            person_file = people_dir / f'{derived_name}.md'
+            if person_file.exists():
+                return f'"[[{derived_name}]]"'
+
+    # 4. gog people search
     if email:
         result = _run(['gog', 'people', 'search', email, '--json'], timeout=10)
         if result and result.returncode == 0 and result.stdout.strip():
@@ -135,7 +146,14 @@ def match_attendee_to_person(email: str, display_name: str, vault_root: Path) ->
             except json.JSONDecodeError:
                 pass
 
-    # 4. Display name fallback
+    # 5. Display name fallback — prefer derived name over email prefix
+    if email:
+        local_part = email.split('@')[0]
+        if '.' in local_part or '-' in local_part or '_' in local_part:
+            derived_name = ' '.join(
+                part.capitalize() for part in re.split(r'[.\-_]', local_part)
+            )
+            return f'"[[{derived_name}]]"'
     return f'"[[{display_name}]]"'
 
 
