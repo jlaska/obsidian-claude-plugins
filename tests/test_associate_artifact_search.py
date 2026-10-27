@@ -597,7 +597,7 @@ class TestSearchGmail:
             result = search_gog.search_gmail("alice@example.com", date(2025, 1, 1), date(2025, 1, 31), None)
         assert result["summary"]["unique_threads"] == 2
 
-    def test_gmail_date_format_uses_slash(self):
+    def test_gmail_until_date_is_inclusive_and_uses_slash(self):
         queries = []
 
         def capture_query(q, account):
@@ -608,7 +608,7 @@ class TestSearchGmail:
             search_gog.search_gmail("alice@example.com", date(2025, 3, 5), date(2025, 3, 12), None)
 
         assert "after:2025/03/05" in queries[0]
-        assert "before:2025/03/12" in queries[0]
+        assert "before:2025/03/13" in queries[0]
 
 
 class TestGogSkipFlags:

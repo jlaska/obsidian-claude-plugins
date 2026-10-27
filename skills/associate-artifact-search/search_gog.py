@@ -34,7 +34,7 @@ import re
 import subprocess
 import sys
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 
@@ -215,7 +215,9 @@ def search_gmail(associate_email: str, since: date, until: date, account: Option
     Search the authenticated user's Gmail for threads involving the target user.
     """
     since_fmt = since.strftime("%Y/%m/%d")
-    until_fmt = until.strftime("%Y/%m/%d")
+    # Gmail's `before:` is exclusive. Advance one day so --until is inclusive,
+    # matching the Drive and other platform searches.
+    until_fmt = (until + timedelta(days=1)).strftime("%Y/%m/%d")
 
     sent_by = search_gmail_query(
         f"from:{associate_email} after:{since_fmt} before:{until_fmt}", account

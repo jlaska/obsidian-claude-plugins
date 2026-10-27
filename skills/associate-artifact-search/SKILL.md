@@ -135,6 +135,20 @@ uv run skills/associate-artifact-search/search_gog.py \
 
 Capture each script's JSON output separately for Step 4.
 
+### Gmail message-content pass
+
+`search_gog.py` returns thread metadata. For the associate's **sent-by** results, fetch the thread content for substantive candidates so the summary reflects the messages, audience, and work rather than just thread counts or subjects:
+
+```bash
+gog --json --readonly --wrap-untrusted gmail thread get <thread-id> \
+  --full --sanitize-content
+```
+
+- Check individual message `From` and sent date inside each thread. Attribute content only to messages authored by the associate within the requested date range; the thread may include other authors or out-of-range replies.
+- Read To/Cc fields to classify reach: one-to-one, small working group, team/org/broad distribution (note broad aliases when visible), or external/customer/partner.
+- Review message bodies for substantive work; classify announcements, decisions/opinions, status reports, meeting summaries/follow-ups, coordination/requests, technical/design communications, and automated or calendar traffic. Separate routine/automated traffic from authored contributions.
+- Process thread reads sequentially or in small batches to avoid Gmail API rate limits. If rate-limited, pause and retry.
+
 ---
 
 ## Step 4 — Present results
@@ -162,7 +176,10 @@ If no Jira activity is found, note that explicitly rather than omitting the sect
 
 ### Google Drive + Gmail (if included)
 - **Drive** — Docs, Sheets, Slides, Forms the associate owns or last modified (name, type, modified date, link)
-- **Gmail** — threads sent by the associate in your mailbox; threads you sent to the associate
+- **Gmail** — lead with a content-level synthesis of the associate's authored work messages: 3–5 themes describing where their attention went, how they showed up (e.g. decisions, opinions, facilitation, status reporting, follow-through), the scope/audience, and the apparent impact. Support this with 3–5 representative dated subject examples and a brief description of message type, audience category, and contribution. Identify broad distribution aliases when present. Summarize recurring/automated status mail and calendar traffic separately, rather than treating volume as impact. Thread counts for sent-by/sent-to can be included as context, but are not a substitute for the content analysis.
+- Use the authenticated mailbox's sent-by search for attribution. Incoming threads may be used as context, but do not describe them as the associate's contributions unless an authored message is present.
+- Summarize personnel topics only at a high level; omit personal, health, HR-case, and other sensitive details. Do not reproduce private message contents verbatim.
+- If message bodies are unavailable or the search is rate-limited, state that limitation and avoid inferring impact from subject lines alone.
 
 ### Summary
 End with a 3–5 sentence paragraph naming the associate and calling out:
