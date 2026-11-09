@@ -132,42 +132,57 @@ After Step 3, check stdout for lines beginning with `⚠️  Cancelled meeting f
 
 ### 6. Needs Attention
 
-Surface stale Jira items that need the user's attention.
+Surface stale Linear issues in the tracked teams. Supabase uses Linear (not Jira); this step uses the Linear MCP tools (`mcp__claude_ai_Linear__*`). They are deferred, so load them first with `ToolSearch("select:mcp__claude_ai_Linear__list_issues")`.
 
-#### 6a. Gather Jira actions (scripted)
+#### 6a. Gather stale Linear issues
 
-Run the discovery script to query Jira for stale issues. The user must provide their Jira project keys.
+**Tracked teams** (edit this list to change scope):
+- `COMPUTE` with `includeSubTeams: true` (covers Capacity, Branching, Compute - General, Compute - Kubernetes, SupaSi, Multigres Integration)
+- `NET` (Networking)
 
-```bash
-python3 "$SKILL_BASE/discover_jira_actions.py" \
-  --self-json "$CACHE_DIR/self.json" \
-  --projects "FM,OME,FLD,ACM,FCN,HYPERSHELL,HYPERFLEET,HPSTRAT" \
-  --stale-days 7 \
-  > "$CACHE_DIR/jira_actions.json"
+**Stale definition:** status name is exactly `In Progress` and `updatedAt` is 7 or more days before today. Do not include `In Review`, `Needs Release` or `Blocked`, even though Linear groups them under the `started` type.
+
+Run one call per tracked team:
+
+```
+list_issues(team="COMPUTE", includeSubTeams=true, state="In Progress", limit=250,
+            fields=["title","team","status","updatedAt","assignee","url","priority"])
+list_issues(team="NET", state="In Progress", limit=250,
+            fields=["title","team","status","updatedAt","assignee","url","priority"])
 ```
 
-Ask the user for their project keys if not known. Adjust `--stale-days` if requested.
+Page with `cursor` while `hasNextPage` is true. `list_issues` can only filter by "updated after", so compute staleness client-side: `days_stale = today - updatedAt`, keep `days_stale >= 7`. Valid `fields` values include `createdBy` (not `creator`).
+
+Split the stale issues into:
+1. **Assigned to you**: assignee is you (`whoami` / `self.json` identity; Linear display name `jameslaska`, name "James Laska").
+2. **Unassigned**: assignee is null.
+3. **Rest of the tracked teams**: everything else, grouped by assignee.
 
 #### 6b. AI triage and insert into daily note
 
-Read the daily note at `$DAILY_NOTE` (the absolute path from Step 1) and the JSON output from `$CACHE_DIR/jira_actions.json`.
+Read the daily note at `$DAILY_NOTE` (the absolute path from Step 1).
 
-If `counts.total` is 0, skip this step entirely (no empty section in the daily note).
+If there are no stale issues, skip this step entirely (no empty section in the daily note).
 
-For each action category with items, generate a grouped callout block with an AI-suggested action for each item. Insert or replace the `# ⚠️ Needs Attention` section in the daily note, positioned **above** `# 📅 Meetings`.
+For each non-empty group, generate a callout block with an AI-suggested action for each item. Sort items by days stale, oldest first. Group 3 can be long, so list it by assignee and keep it collapsed. Insert or replace the `# ⚠️ Needs Attention` section in the daily note, positioned **above** `# 📅 Meetings`.
 
 **Callout format:**
 
 ```markdown
 # ⚠️ Needs Attention
 
-> [!warning]- Stale Issues Assigned to You (N items)
-> - **[KEY-123](https://redhat.atlassian.net/browse/KEY-123)** — *Summary* (Status, N days stale)
+> [!warning]- Stale In-Progress Issues Assigned to You (N items)
+> - **[KUBE-123](https://linear.app/supabase/issue/KUBE-123)** — *Summary* (Team, N days stale)
 >   → **Update status or close if complete**
 
-> [!todo]- Follow-up on Issues You Created (N items)
-> - **[KEY-456](https://redhat.atlassian.net/browse/KEY-456)** — *Summary* (Status, assigned to Name, N days stale)
->   → **Check in with assignee on blockers**
+> [!todo]- Unassigned In-Progress Issues (N items)
+> - **[SUP-38](https://linear.app/supabase/issue/SUP-38)** — *Summary* (Team, N days stale)
+>   → **Find an owner or move back to Backlog**
+
+> [!info]- Stale In-Progress Issues in COMPUTE / NET (N items)
+> **Assignee Name**
+> - **[GENCOMP-213](https://linear.app/supabase/issue/GENCOMP-213)** — *Summary* (Team, N days stale)
+>   → **Ask for status or ask whether it is still in progress**
 ```
 
 The `→ **bold text**` line is an AI-generated suggested action tailored to each item.
@@ -190,7 +205,7 @@ Read `$DAILY_NOTE` and check whether `# ⚠️ Needs Attention` already exists.
 | `discover_events.py` | Calendar fetch + filter | `--self-json`, `--cache-dir`, `--calendars`, `--all-calendars` | JSON: filtered events array |
 | `sync_to_vault.py` | Meeting files + daily note | `--vault-root`, `--events-json`, `--self-json` | Vault files updated; stdout: status + warnings |
 | `gather_meeting_context.py` | Vault introspection for AI prep | `--vault-root`, `--self-json` | JSON: flat array of meetings, each with `is_first_run` |
-| `discover_jira_actions.py` | Stale Jira issue discovery | `--self-json`, `--projects`, `--stale-days` | JSON: stale assigned + stale created issues |
+| `discover_jira_actions.py` | **Unused** (Supabase uses Linear; Step 6 uses the Linear MCP tools) | `--self-json`, `--projects`, `--stale-days` | JSON: stale assigned + stale created issues |
 | `vault_utils.py` | Shared utilities (library) | — imported by other scripts | — |
 
 All scripts support `--help` for usage details.

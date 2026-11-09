@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "linkedin": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/Users/jlaska/Projects/linkedin-mcp-server",
+        "run",
+        "-m",
+        "linkedin_mcp_server"
+      ],
+      "env": {}
+    }
+  }
+}
