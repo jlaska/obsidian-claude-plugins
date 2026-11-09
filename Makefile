@@ -14,13 +14,13 @@ help:
 	@echo "  make update        - Update plugin to latest pushed commit (then restart Claude Code)"
 
 test:
-	uv run --with pytest --with pytest-mock pytest tests/ -m "not integration and not vault" -v
+	uv run --extra test pytest tests/ -m "not integration and not vault" -v
 
 test-all:
-	uv run --with pytest --with pytest-mock pytest tests/ -v
+	uv run --extra test pytest tests/ -v
 
 test-integration:
-	uv run --with pytest --with pytest-mock pytest tests/ -m integration -v
+	uv run --extra test pytest tests/ -m integration -v
 
 lint:
 	uvx pre-commit run --all-files
