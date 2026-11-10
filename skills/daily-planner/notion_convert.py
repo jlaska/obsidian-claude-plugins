@@ -725,6 +725,9 @@ def _normalize_ntn(text: str) -> Optional[Tuple[str, str]]:
     body = re.sub(r'<mention-date\b', '<date', body)
     body = re.sub(r'<(/?)mention-(?:user|page|database|agent)\b', r'<\1mention', body)
     body = re.sub(r'<empty-block\s*/>', '', body)
+    # Block attributes ntn appends to headings, e.g. ``## Title {toggle="true"}``.
+    body = re.sub(r'^(#{1,6}[^\n]*?)[ \t]*\{(?:[a-z_]+="[^"]*"[ \t]*)+\}[ \t]*$', r'\1',
+                  body, flags=re.M)
     return body, title
 
 
@@ -870,6 +873,19 @@ def _cap(md: str, max_chars: int) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
+_MD_IMAGE_RE = re.compile(r'!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)')
+_SIGNED_URL_RE = re.compile(r'X-Amz-|prod-files-secure|[?&]Signature=|notion_record=', re.I)
+
+
+def _scrub_images(md: str) -> str:
+    """Replace images whose URL is a signed/expiring link (it embeds credentials)."""
+    def repl(m):
+        if _SIGNED_URL_RE.search(m.group(2)):
+            return f'*(image: {m.group(1)})*' if m.group(1) else '*(image)*'
+        return m.group(0)
+    return _MD_IMAGE_RE.sub(repl, md)
+
+
 def convert(raw, date: Optional[str] = None, *, max_age_days: int = DEFAULT_MAX_AGE_DAYS,
             resolve_person: Optional[ResolvePerson] = None,
             max_chars: int = DEFAULT_MAX_CHARS) -> dict:
@@ -881,6 +897,8 @@ def convert(raw, date: Optional[str] = None, *, max_age_days: int = DEFAULT_MAX_
     except Exception as exc:  # never raise on malformed input
         result.update(status='error', reason=f'internal error: {type(exc).__name__}: {exc}',
                       markdown='', matched_dates=[], child_candidate=None)
+    if result.get('markdown'):
+        result['markdown'] = _scrub_images(result['markdown'])
     return result
 
 

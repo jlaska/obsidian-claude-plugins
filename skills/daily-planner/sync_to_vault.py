@@ -106,9 +106,28 @@ def classify_attachments(event: Dict) -> Dict[str, list]:
     return result
 
 
+_CALENDAR_ADDRESS_RE = re.compile(r'@(group|resource|import)\.calendar\.google\.com$', re.I)
+
+
+def is_calendar_address(email: str) -> bool:
+    """True for Google Calendar group/resource addresses (c_<hash>@group.calendar.google.com).
+
+    These are calendars or rooms invited as attendees, not people, and their local part
+    is an opaque hash that must never be turned into a name.
+    """
+    return bool(_CALENDAR_ADDRESS_RE.search(email or ''))
+
+
 def match_attendee_to_person(email: str, display_name: str, vault_root: Path) -> str:
-    """Match calendar attendee email to a PEOPLE/ wikilink."""
+    """Match calendar attendee email to a PEOPLE/ wikilink.
+
+    Returns '' for calendar/resource addresses (Google groups and rooms are not people;
+    callers skip them).
+    """
     people_dir = vault_root / 'PEOPLE'
+
+    if is_calendar_address(email):
+        return ''
 
     # 1. Email in frontmatter (matches both 'mail:' and 'email:' fields)
     if email:
@@ -496,7 +515,9 @@ def create_or_update_meeting_note(
     for att in non_self:
         email = att.get('email', '')
         display_name = att.get('displayName') or email.split('@')[0]
-        attendee_links.append(match_attendee_to_person(email, display_name, vault_root))
+        link = match_attendee_to_person(email, display_name, vault_root)
+        if link:
+            attendee_links.append(link)
 
     start = event.get('start', {})
     end = event.get('end', {})

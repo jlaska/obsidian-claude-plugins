@@ -650,3 +650,22 @@ class TestCli:
         assert notion_convert.main([str(f), "--date", "2026-11-02"]) == 0
         data = json.loads(capsys.readouterr().out)
         assert data["status"] == "ok" and data["matched_dates"] == ["2026-11-02"]
+
+
+class TestNtnArtifacts:
+    def test_signed_image_url_is_not_written(self):
+        page = ('---\ntitle: T\n---\n\n## <mention-date start="2026-11-10"/>\n'
+                '![](https://prod-files-secure.s3.us-west-2.amazonaws.com/x/image.png'
+                '?X-Amz-Credential=SECRET&X-Amz-Signature=abc#notion_record=block.1)\n'
+                '![logo](https://example.com/logo.png)\nBody\n')
+        r = notion_convert.convert(page, '2026-11-10')
+        assert r['status'] == 'ok'
+        assert 'X-Amz' not in r['markdown'] and 'SECRET' not in r['markdown']
+        assert 'https://example.com/logo.png' in r['markdown']
+
+    def test_toggle_attribute_stripped_from_headings(self):
+        page = ('---\ntitle: T\n---\n\n## <mention-date start="2026-11-10"/>  {toggle="true"}\n'
+                'Body\n\n## NEXT {toggle="true"}\nMore\n')
+        r = notion_convert.convert(page, '2026-11-10')
+        assert '{toggle' not in r['markdown']
+        assert r['matched_dates'] == ['2026-11-10']
