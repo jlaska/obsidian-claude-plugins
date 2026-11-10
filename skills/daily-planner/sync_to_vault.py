@@ -27,13 +27,16 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).parent))
+from skill_config import AttendeeFilter, load_config
 from vault_utils import (
+    extract_notion_links,
     extract_doc_id_from_url,
     html_to_markdown,
     load_template,
     sanitize_title,
     update_frontmatter_values,
     update_frontmatter_with_missing_properties,
+    upsert_section,
 )
 
 
@@ -230,6 +233,24 @@ def _strip_gemini_notes_content(content: str) -> str:
 
 _GEMINI_NOTES_TAB_NAMES = ['full notes', 'quick notes', 'notes']
 
+_AUTH_ERROR_RE = re.compile(
+    r'\b(401|403)\b|insufficient|scope|unauthori[sz]ed|permission|forbidden|auth(?:enticat|oriz)|re-?auth|token',
+    re.I)
+
+
+class GeminiFetchError(Exception):
+    """Raised when gog fails for an auth/permission reason (not a missing tab)."""
+
+
+def _auth_error_reason(result) -> Optional[str]:
+    """Return a one-line reason if a failed gog result looks like an auth/scope problem."""
+    if not result or result.returncode == 0:
+        return None
+    err = result.stderr.strip() if isinstance(result.stderr, str) else ''
+    if err and _AUTH_ERROR_RE.search(err):
+        return err.splitlines()[0][:200]
+    return None
+
 
 def fetch_gemini_notes_tab(doc_id: str) -> Optional[str]:
     """Fetch the notes tab from a Gemini Google Doc and return cleaned markdown.
@@ -241,6 +262,9 @@ def fetch_gemini_notes_tab(doc_id: str) -> Optional[str]:
             ['gog', 'docs', 'cat', '--tab', tab_name, '--raw', '--json', '--results-only', doc_id],
             timeout=30,
         )
+        reason = _auth_error_reason(result)
+        if reason:
+            raise GeminiFetchError(reason)
         if not result or result.returncode != 0 or not result.stdout.strip():
             continue
         try:
@@ -281,56 +305,19 @@ def update_meeting_with_gemini_notes(meeting_file: Path) -> bool:
     if not doc_id:
         return False
     print('  📝 Fetching Gemini notes...')
-    notes_content = fetch_gemini_notes_tab(doc_id)
+    try:
+        notes_content = fetch_gemini_notes_tab(doc_id)
+    except GeminiFetchError as exc:
+        print(f'  ✗ Gemini notes fetch failed (auth/permission, not a missing tab): {exc}')
+        print('    Re-authorize gog with Docs access, `gog auth add <account> --services docs,calendar` (see `gog auth add --help`)')
+        return False
     if not notes_content:
         print(f'  ⚠️  No notes tab found in Gemini doc: {gemini_url}')
         return False
-    gemini_section = '## Notes by Gemini\n\n' + notes_content
-    if '## Notes by Gemini' in content:
-        section_start = content.find('## Notes by Gemini')
-        prefix = content[:section_start]
-        for sep in ['\n\n---\n', '\n---\n']:
-            if prefix.endswith(sep):
-                section_start -= len(sep)
-                break
-        search_from = content.find('## Notes by Gemini') + len('## Notes by Gemini')
-        sep_idx = content.find('\n---', search_from)
-        heading_match = re.search(r'\n#{1,2} ', content[search_from:])
-        section_end = len(content)
-        if sep_idx != -1 and (heading_match is None or sep_idx <= search_from + heading_match.start()):
-            section_end = sep_idx
-        elif heading_match:
-            section_end = search_from + heading_match.start()
-        new_content = content[:section_start].rstrip() + '\n\n' + gemini_section + content[section_end:]
-        meeting_file.write_text(new_content)
-        print(f'  ✓ Updated Gemini notes: {meeting_file.name}')
-        return True
-
-    # Insert before ## Recent Meetings, after ## Agenda, or at end
-    rec_match = re.search(r'^## Recent Meetings', content, re.MULTILINE)
-    if rec_match:
-        rec_idx = rec_match.start()
-        insert_before = rec_idx
-        for sep in ['\n---\n', '\n\n---\n']:
-            if content[:rec_idx].endswith(sep):
-                insert_before = rec_idx - len(sep)
-                break
-        new_content = (content[:insert_before].rstrip() + '\n\n' + gemini_section
-                       + '\n\n' + content[insert_before:].lstrip())
-    elif '## Agenda' in content:
-        agenda_idx = content.find('## Agenda')
-        next_section = content.find('\n#', agenda_idx + 8)
-        separator_idx = content.find('\n---', agenda_idx + 8)
-        insert_idx = len(content)
-        if next_section != -1 and (separator_idx == -1 or next_section < separator_idx):
-            insert_idx = next_section
-        elif separator_idx != -1:
-            insert_idx = separator_idx
-        new_content = content[:insert_idx].rstrip() + '\n\n' + gemini_section + '\n\n' + content[insert_idx:].lstrip()
-    else:
-        new_content = content.rstrip() + '\n\n' + gemini_section + '\n'
+    existed = '## Notes by Gemini' in content
+    new_content = upsert_section(content, 'Notes by Gemini', notes_content)
     meeting_file.write_text(new_content)
-    print(f'  ✓ Added Gemini notes: {meeting_file.name}')
+    print(f'  ✓ {"Updated" if existed else "Added"} Gemini notes: {meeting_file.name}')
     return True
 
 
@@ -499,13 +486,19 @@ def create_or_update_meeting_note(
     vault_root: Path,
     user_emails: Set[str],
     skill_base_dir: Optional[Path] = None,
+    attendee_filter: Optional[AttendeeFilter] = None,
 ) -> Optional[Tuple[str, Path]]:
-    """Create or update a meeting note file. Returns (start_dt, path) or None."""
+    """Create or update a meeting note file. Returns (start_dt, path) or None.
+
+    ``attendee_filter`` (from the user's config) drops attendee addresses such as group
+    mailing lists and calendar/resource addresses before they are hydrated.
+    """
     meeting_file = get_meeting_file_path(event, vault_root)
 
     # Attendee matching
     attendees = event.get('attendees', [])
-    non_self = [a for a in attendees if not a.get('self') and a.get('email', '').lower() not in user_emails]
+    non_self = [a for a in attendees if not a.get('self') and a.get('email', '').lower() not in user_emails
+                and not (attendee_filter and attendee_filter.is_ignored(a.get('email', '')))]
     attendee_links = []
     for att in non_self:
         email = att.get('email', '')
@@ -518,6 +511,7 @@ def create_or_update_meeting_note(
     end_dt = end.get('dateTime', '')
     gmeet = event.get('hangoutLink', '')
     description = event.get('description', '')
+    notion_links = extract_notion_links(description)
     html_link = event.get('htmlLink', '')
 
     classified = classify_attachments(event)
@@ -553,6 +547,8 @@ def create_or_update_meeting_note(
             new_props['slides'] = classified['slides'][0]
         if classified['other']:
             new_props['attachments'] = classified['other'][0]
+        if notion_links:
+            new_props['notion'] = notion_links[0]['url']
         if recurring_id:
             new_props['recurringEventId'] = recurring_id
         if new_props:
@@ -589,6 +585,8 @@ def create_or_update_meeting_note(
         fm_lines.append(f'slides: {classified["slides"][0]}')
     if classified['other']:
         fm_lines.append(f'attachments: {classified["other"][0]}')
+    if notion_links:
+        fm_lines.append(f'notion: {notion_links[0]["url"]}')
     if recurring_id:
         fm_lines.append(f'recurringEventId: {recurring_id}')
     if html_link:
@@ -599,14 +597,14 @@ def create_or_update_meeting_note(
     template_body = load_template(vault_root, 'Meeting Template', skill_base_dir) or '## Actions\n\n\n## Agenda\n\n'
     if description:
         desc_md = html_to_markdown(description)
-        if '## Agenda' in template_body:
-            parts = template_body.split('## Agenda', 1)
-            after = parts[1]
-            next_idx = after.find('\n#')
-            if next_idx != -1:
-                template_body = parts[0] + '## Agenda\n\n' + desc_md + '\n' + after[next_idx:]
-            else:
-                template_body = parts[0] + '## Agenda\n\n' + desc_md + '\n'
+        agenda_match = re.search(r'^(#{1,2}) Agenda[ \t]*$', template_body, re.MULTILINE)
+        if agenda_match:
+            hashes = agenda_match.group(1)
+            before = template_body[:agenda_match.start()]
+            after = template_body[agenda_match.end():]
+            next_heading = re.search(r'\n#{1,2} ', after)
+            tail = after[next_heading.start():] if next_heading else ''
+            template_body = f'{before}{hashes} Agenda\n\n{desc_md}\n{tail}'
         else:
             template_body += f'\n\n## Agenda\n\n{desc_md}\n'
 
@@ -637,8 +635,8 @@ def format_time_from_iso(iso_str: str) -> str:
 
 
 def _read_meeting_fm(meeting_file: Path) -> Dict:
-    """Read start, end, attendees, gemini from meeting frontmatter."""
-    result: Dict = {'start': '', 'end': '', 'attendees': [], 'gemini': ''}
+    """Read start, end, attendees, gemini, notion from meeting frontmatter."""
+    result: Dict = {'start': '', 'end': '', 'attendees': [], 'gemini': '', 'notion': ''}
     if not meeting_file.exists():
         return result
     lines = meeting_file.read_text().split('\n')
@@ -661,6 +659,9 @@ def _read_meeting_fm(meeting_file: Path) -> Dict:
             in_att = False
         elif line.startswith('gemini:'):
             result['gemini'] = line.split('gemini:', 1)[1].strip()
+            in_att = False
+        elif line.startswith('notion:'):
+            result['notion'] = line.split('notion:', 1)[1].strip()
             in_att = False
         elif line.startswith('attendees:'):
             in_att = True
@@ -690,7 +691,13 @@ def build_meetings_table(meeting_rows: List[Tuple[str, str, Dict]]) -> str:
         else:
             att_str = ', '.join(a.replace('|', '\\|') for a in attendees)
         gemini_url = fm.get('gemini', '')
-        summary_cell = f'[🤖]({gemini_url})' if gemini_url else ''
+        notion_url = fm.get('notion', '')
+        summary_cell = ' '.join(
+            part for part in (
+                f'[🤖]({gemini_url})' if gemini_url else '',
+                f'[📓]({notion_url})' if notion_url else '',
+            ) if part
+        )
         lines.append(f'| {time_str} | {meeting_link} | {att_str} | {summary_cell} |')
     return '\n'.join(lines)
 
@@ -937,6 +944,7 @@ def sync_to_vault(
     target_date: datetime,
     user_emails: Set[str],
     skill_base_dir: Optional[Path] = None,
+    attendee_filter: Optional[AttendeeFilter] = None,
 ) -> None:
     """Run the full sync: create meeting files, update daily note."""
     meeting_files: List[Tuple[str, Path]] = []
@@ -960,7 +968,8 @@ def sync_to_vault(
 
         print(f'\nProcessing: {summary}')
         try:
-            result = create_or_update_meeting_note(event, vault_root, user_emails, skill_base_dir)
+            result = create_or_update_meeting_note(event, vault_root, user_emails, skill_base_dir,
+                                                   attendee_filter)
             if result:
                 meeting_files.append(result)
         except Exception as e:
@@ -1029,7 +1038,10 @@ def main():
 
     skill_base_dir = Path(__file__).parent
 
+    attendee_filter = AttendeeFilter.from_config(load_config())
+
     sync_to_vault(
+        attendee_filter=attendee_filter,
         vault_root=vault_root,
         events=events,
         target_date=target_date,
