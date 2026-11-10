@@ -1,0 +1,14 @@
+# Copy to ~/.config/obsidian-productivity/daily-planner/config.yaml
+# (or set DAILY_PLANNER_CONFIG to another path). Company/person specifics live here,
+# not in the skill. A missing file means defaults; a broken file is ignored with a warning.
+
+attendees:
+  # Addresses never hydrated as meeting attendees (exact match, case-insensitive).
+  # Typically mailing-list/group addresses that are not people.
+  ignore_emails:
+    - team-list@example.com
+  # Regular expressions, searched case-insensitively against the address.
+  ignore_patterns:
+    - '@group\.calendar\.google\.com$'
+    - '@resource\.calendar\.google\.com$'
+    - '@import\.calendar\.google\.com$'

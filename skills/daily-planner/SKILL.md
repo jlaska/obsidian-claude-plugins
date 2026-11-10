@@ -216,6 +216,15 @@ Read `$DAILY_NOTE` and check whether `# ⚠️ Needs Attention` already exists.
 
 ---
 
+## Configuration
+
+Company- and person-specific settings live in a user config file, not in the skill:
+`~/.config/obsidian-productivity/daily-planner/config.yaml` (honours `XDG_CONFIG_HOME`; override with the `DAILY_PLANNER_CONFIG` environment variable). A missing file means defaults. A broken file or regex is reported as a warning and ignored. See `config.example.yaml` in the skill directory. Run `python3 "$SKILL_BASE/skill_config.py"` to print the effective config.
+
+Supported keys:
+- `attendees.ignore_emails`: exact addresses (case-insensitive) never hydrated as meeting attendees, such as group mailing lists.
+- `attendees.ignore_patterns`: case-insensitive regular expressions matched against the attendee address, such as Google calendar group and resource addresses.
+
 ## Script Reference
 
 | Script | Purpose | Input | Output |
@@ -230,6 +239,7 @@ Read `$DAILY_NOTE` and check whether `# ⚠️ Needs Attention` already exists.
 | `write_notion_section.py` | Insert/replace `## Notes from Notion` from a ready-made markdown file (manual use) | `--meeting-file`, `--content-file` | Meeting file updated |
 | `gather_meeting_context.py` | Vault introspection for AI prep | `--vault-root`, `--self-json` | JSON: flat array of meetings, each with `is_first_run` |
 | `discover_jira_actions.py` | **Unused** (Supabase uses Linear; Step 6 uses the Linear MCP tools) | `--self-json`, `--projects`, `--stale-days` | JSON: stale assigned + stale created issues |
+| `skill_config.py` | User config loader (library): attendee ignore lists | `~/.config/obsidian-productivity/daily-planner/config.yaml` | Config dict; run directly to print the effective config |
 | `vault_utils.py` | Shared utilities (library) | — imported by other scripts | — |
 
 All scripts support `--help` for usage details.

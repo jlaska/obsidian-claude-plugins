@@ -137,17 +137,3 @@ class TestSyncMeetingPrepSection:
         result = stv.sync_meeting_prep_section(content, valid, stale, rows)
         assert "# Other Section" in result
         assert "Some content" in result
-
-
-class TestCalendarAddressAttendees:
-    GROUP = 'c_a45fe75f9ffa296fb8777199655723516866789567b1e3238a5ed2414809c247@group.calendar.google.com'
-
-    def test_group_calendar_is_pruned_even_with_display_name(self, tmp_path):
-        import sync_to_vault as stv
-        assert stv.match_attendee_to_person(self.GROUP, 'Public Meetings', tmp_path) == ''
-        assert stv.match_attendee_to_person(self.GROUP, '', tmp_path) == ''
-
-    def test_is_calendar_address(self):
-        import sync_to_vault as stv
-        assert stv.is_calendar_address('room-1@resource.calendar.google.com')
-        assert not stv.is_calendar_address('joel.low@supabase.io')

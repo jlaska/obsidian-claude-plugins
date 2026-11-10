@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).parent))
+from skill_config import AttendeeFilter, load_config
 from vault_utils import (
     extract_notion_links,
     extract_doc_id_from_url,
@@ -106,28 +107,9 @@ def classify_attachments(event: Dict) -> Dict[str, list]:
     return result
 
 
-_CALENDAR_ADDRESS_RE = re.compile(r'@(group|resource|import)\.calendar\.google\.com$', re.I)
-
-
-def is_calendar_address(email: str) -> bool:
-    """True for Google Calendar group/resource addresses (c_<hash>@group.calendar.google.com).
-
-    These are calendars or rooms invited as attendees, not people, and their local part
-    is an opaque hash that must never be turned into a name.
-    """
-    return bool(_CALENDAR_ADDRESS_RE.search(email or ''))
-
-
 def match_attendee_to_person(email: str, display_name: str, vault_root: Path) -> str:
-    """Match calendar attendee email to a PEOPLE/ wikilink.
-
-    Returns '' for calendar/resource addresses (Google groups and rooms are not people;
-    callers skip them).
-    """
+    """Match calendar attendee email to a PEOPLE/ wikilink."""
     people_dir = vault_root / 'PEOPLE'
-
-    if is_calendar_address(email):
-        return ''
 
     # 1. Email in frontmatter (matches both 'mail:' and 'email:' fields)
     if email:
@@ -504,20 +486,24 @@ def create_or_update_meeting_note(
     vault_root: Path,
     user_emails: Set[str],
     skill_base_dir: Optional[Path] = None,
+    attendee_filter: Optional[AttendeeFilter] = None,
 ) -> Optional[Tuple[str, Path]]:
-    """Create or update a meeting note file. Returns (start_dt, path) or None."""
+    """Create or update a meeting note file. Returns (start_dt, path) or None.
+
+    ``attendee_filter`` (from the user's config) drops attendee addresses such as group
+    mailing lists and calendar/resource addresses before they are hydrated.
+    """
     meeting_file = get_meeting_file_path(event, vault_root)
 
     # Attendee matching
     attendees = event.get('attendees', [])
-    non_self = [a for a in attendees if not a.get('self') and a.get('email', '').lower() not in user_emails]
+    non_self = [a for a in attendees if not a.get('self') and a.get('email', '').lower() not in user_emails
+                and not (attendee_filter and attendee_filter.is_ignored(a.get('email', '')))]
     attendee_links = []
     for att in non_self:
         email = att.get('email', '')
         display_name = att.get('displayName') or email.split('@')[0]
-        link = match_attendee_to_person(email, display_name, vault_root)
-        if link:
-            attendee_links.append(link)
+        attendee_links.append(match_attendee_to_person(email, display_name, vault_root))
 
     start = event.get('start', {})
     end = event.get('end', {})
@@ -958,6 +944,7 @@ def sync_to_vault(
     target_date: datetime,
     user_emails: Set[str],
     skill_base_dir: Optional[Path] = None,
+    attendee_filter: Optional[AttendeeFilter] = None,
 ) -> None:
     """Run the full sync: create meeting files, update daily note."""
     meeting_files: List[Tuple[str, Path]] = []
@@ -981,7 +968,8 @@ def sync_to_vault(
 
         print(f'\nProcessing: {summary}')
         try:
-            result = create_or_update_meeting_note(event, vault_root, user_emails, skill_base_dir)
+            result = create_or_update_meeting_note(event, vault_root, user_emails, skill_base_dir,
+                                                   attendee_filter)
             if result:
                 meeting_files.append(result)
         except Exception as e:
@@ -1050,7 +1038,10 @@ def main():
 
     skill_base_dir = Path(__file__).parent
 
+    attendee_filter = AttendeeFilter.from_config(load_config())
+
     sync_to_vault(
+        attendee_filter=attendee_filter,
         vault_root=vault_root,
         events=events,
         target_date=target_date,
