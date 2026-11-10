@@ -75,7 +75,7 @@ python3 "$SKILL_BASE/sync_to_vault.py" \
 
 ### 3b. Fetch Notion Notes
 
-Many meetings link a Notion page (agenda/notes) in the event description. Step 3 records it as the `notion:` frontmatter key on the meeting file and adds a 📓 link to the daily note's Meetings table. This step pulls the relevant content into a `## Notes from Notion` section, following the same replace-in-place process as `## Notes by Gemini` (refreshed on every run; everything else in the note is untouched). Python scripts cannot call MCP tools, so the agent only does the fetch; `fetch_notion_section.py` does all selection, cleaning and writing deterministically. Do not hand-edit, summarise or select from the fetched content.
+Many meetings link a Notion page (agenda/notes) in the event description. Step 3 records it as the `notion:` frontmatter key on the meeting file and adds a 📓 link to the daily note's Meetings table. This step pulls the relevant content into a `## Notes from Notion` section, following the same replace-in-place process as `## Notes by Gemini` (refreshed on every run; everything else in the note is untouched). `fetch_notion_section.py` does the fetch (via `ntn`) and all selection, cleaning and writing deterministically. Do not hand-edit, summarise or select from the fetched content.
 
 ```bash
 python3 "$SKILL_BASE/list_notion_meetings.py" --vault-root "$VAULT_ROOT" > "$CACHE_DIR/notion_meetings.json"
@@ -86,9 +86,13 @@ Output: JSON array of `{stem, path, start, notion_url, page_id, is_database, has
 For each entry (all of today's meetings, past and upcoming):
 
 1. **`is_database: true`** (URL has `?v=`): link only. Do not fetch; the 📓 link already exists.
-2. **Fetch once per `page_id`.** Several series share one page (e.g. both Common Hours series): fetch and save the raw result once, then run the script for each meeting that shares it.
-3. Call `notion-fetch` with `notion_url`.
-4. **Get the raw result into a file.** If the tool result was auto-saved to a file (very large pages), use that path as-is. Otherwise write the tool's returned JSON text verbatim, with no editing or summarising, to `$CACHE_DIR/notion_<page_id>.txt` using a single quoted heredoc:
+2. **Primary path: `ntn`.** If `ntn whoami` succeeds, the script fetches the page itself (and the child page for index pages), so there is no raw-file handoff. Pass `--vault-root "$VAULT_ROOT"` so people mentions link to PEOPLE notes:
+
+   ```bash
+   python3 "$SKILL_BASE/fetch_notion_section.py" --ntn --meeting-file "<path>" --date "<YYYY-MM-DD of the day being planned>" --vault-root "$VAULT_ROOT"
+   ```
+
+3. **Fallback: Notion connector** (only if `ntn` is not installed or not logged in). Load it with `ToolSearch("select:mcp__claude_ai_Notion__notion-fetch")`, call `notion-fetch` with `notion_url` once per `page_id` (several series share one page), and get the raw result into a file. If the result was auto-saved to a file, use that path as-is. Otherwise write the returned JSON text verbatim, with no editing or summarising, using a single quoted heredoc:
 
    ```bash
    cat > "$CACHE_DIR/notion_<page_id>.txt" <<'NOTION_RAW_EOF'
@@ -96,22 +100,16 @@ For each entry (all of today's meetings, past and upcoming):
    NOTION_RAW_EOF
    ```
 
-5. **Run the converter** (add `--vault-root "$VAULT_ROOT"` so people mentions link to PEOPLE notes):
+   Then run the same script with `--raw-file "<raw file>"` in place of `--ntn`.
 
-   ```bash
-   python3 "$SKILL_BASE/fetch_notion_section.py" --meeting-file "<path>" --date "<YYYY-MM-DD of the day being planned>" --raw-file "<raw file>" --vault-root "$VAULT_ROOT"
-   ```
+The script prints one JSON line: `{status, reason, matched_dates, child_candidate, warnings}`. It selects the section for the date (exact match, else the most recent earlier section within 14 days, with a visible "Notes from ..." line), writes `## Notes from Notion` with a `Source:` line, and never writes unless the status is `written`.
 
-   It prints one JSON line: `{status, reason, matched_dates, child_candidate, warnings}`. It selects the section for the date (exact match, else the most recent earlier section within 14 days, with a visible "Notes from ..." line), writes `## Notes from Notion` with a `Source:` line, and never writes unless the status is `written`.
-
-6. **Act on `status`:**
-   - `written`: done. If `matched_dates` differs from the meeting date, the section says which earlier date it shows.
-   - `no_section`: nothing to write (no section for the date within the window). Report this as "no notes for this date" with the `reason`.
-   - `needs_child`: the page is an index of per-date child pages. Fetch the URL in `child_candidate` with `notion-fetch`, save that result to `$CACHE_DIR/notion_<child page id>.txt` the same way, and re-run step 5 with the child's raw file (the child's own URL is used for the Source line). A child page does not need another `needs_child` round; if it happens, report it.
-   - `error`: report explicitly, naming the meeting and the `reason` (for example not found vs no access). Never report an error as "no notes". Suggest re-authenticating the Notion connector for auth failures. Continue with the remaining meetings.
-   - Also surface any `warnings` briefly.
-
-If `notion-fetch` itself fails, treat it as an `error` the same way (say why, name the meeting, continue).
+**Act on `status`:**
+- `written`: done. If `matched_dates` differs from the meeting date, the section says which earlier date it shows.
+- `no_section`: nothing to write. Report "no notes for this date" with the `reason`.
+- `needs_child`: only happens in the connector fallback. Fetch the URL in `child_candidate` with `notion-fetch`, save it to `$CACHE_DIR/notion_<child page id>.txt` the same way, and re-run with that raw file (the child's own URL is used for the Source line).
+- `error`: report explicitly, naming the meeting and the `reason` (for example not found vs no access). Never report an error as "no notes". For auth failures, suggest `ntn login`. Continue with the remaining meetings.
+- Also surface any `warnings` briefly.
 
 ### 4. Generate Meeting Preparation
 
@@ -227,7 +225,7 @@ Read `$DAILY_NOTE` and check whether `# ⚠️ Needs Attention` already exists.
 | `discover_events.py` | Calendar fetch + filter | `--self-json`, `--cache-dir`, `--calendars`, `--all-calendars` | JSON: filtered events array |
 | `sync_to_vault.py` | Meeting files + daily note | `--vault-root`, `--events-json`, `--self-json` | Vault files updated; stdout: status + warnings |
 | `list_notion_meetings.py` | Meetings linking a Notion page (for Step 3b) | `--vault-root`, `--date` | JSON: meetings with `notion:` URL, page ID, database flag |
-| `fetch_notion_section.py` | Convert a raw `notion-fetch` result and insert/replace `## Notes from Notion` | `--meeting-file`, `--date`, `--raw-file`, `--notion-url`, `--vault-root` | One JSON status line: `written`, `no_section`, `needs_child` or `error` |
+| `fetch_notion_section.py` | Fetch via `ntn` (or convert a raw `notion-fetch` result) and insert/replace `## Notes from Notion` | `--meeting-file`, `--date`, `--ntn` or `--raw-file`, `--notion-url`, `--vault-root` | One JSON status line: `written`, `no_section`, `needs_child` or `error` |
 | `notion_convert.py` | Notion to Obsidian markdown converter (library, small CLI) | raw `notion-fetch` JSON or its text, `--date` | JSON: `status`, `markdown`, `matched_dates`, `child_candidate`, `warnings` |
 | `write_notion_section.py` | Insert/replace `## Notes from Notion` from a ready-made markdown file (manual use) | `--meeting-file`, `--content-file` | Meeting file updated |
 | `gather_meeting_context.py` | Vault introspection for AI prep | `--vault-root`, `--self-json` | JSON: flat array of meetings, each with `is_first_run` |

@@ -221,3 +221,56 @@ class TestSectionCompat:
         text = meeting.read_text()
         body = text.split("## Notes from Notion\n\n", 1)[1].split("\n\n# Recent Meetings", 1)[0]
         assert vault_utils.upsert_section(text, "Notes from Notion", body) == text
+
+
+class TestNtnMode:
+    NTN_PAGE = (
+        '---\ntitle: Syncs\n---\n\n'
+        '## <mention-date start="2026-11-09"/> \n1. Alex Example to follow up\n\n'
+        '## <mention-date start="2026-11-02"/> \n1. Older\n'
+    )
+
+    def _meeting(self, tmp_path, url='https://www.notion.so/ws/Syncs-0123456789abcdef0123456789abcdef'):
+        f = tmp_path / '2026-11-09 - Sync.md'
+        f.write_text(f'---\nnotion: {url}\n---\n\n## Actions\n\n## Agenda\n')
+        return f
+
+    def test_ntn_fetch_writes_section(self, tmp_path):
+        from fetch_notion_section import run_ntn
+        f = self._meeting(tmp_path)
+        seen = []
+        out = run_ntn(f, '2026-11-09', getter=lambda pid: seen.append(pid) or self.NTN_PAGE)
+        assert out['status'] == 'written'
+        assert seen == ['0123456789abcdef0123456789abcdef']
+        text = f.read_text()
+        assert '## Notes from Notion' in text and 'Alex Example to follow up' in text
+        assert 'Older' not in text
+
+    def test_ntn_failure_is_error_and_does_not_write(self, tmp_path):
+        from fetch_notion_section import run_ntn
+        f = self._meeting(tmp_path)
+        before = f.read_text()
+
+        def boom(pid):
+            raise RuntimeError('ntn failed: 404')
+        out = run_ntn(f, '2026-11-09', getter=boom)
+        assert out['status'] == 'error' and '404' in out['reason']
+        assert f.read_text() == before
+
+    def test_ntn_database_link_rejected(self, tmp_path):
+        from fetch_notion_section import run_ntn
+        f = self._meeting(tmp_path, 'https://www.notion.so/ws/0123456789abcdef0123456789abcdef?v=fedcba9876543210fedcba9876543210')
+        out = run_ntn(f, '2026-11-09', getter=lambda pid: 'x')
+        assert out['status'] == 'error'
+
+    def test_ntn_index_page_follows_child(self, tmp_path):
+        from fetch_notion_section import run_ntn
+        f = self._meeting(tmp_path)
+        child_url = 'https://app.notion.com/p/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+        index = ('---\ntitle: Index\n---\n\n'
+                 f'<page url="{child_url}">11/09 \\| Stand-Up</page>\n')
+        pages = {'0123456789abcdef0123456789abcdef': index,
+                 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa': '---\ntitle: 11/09 | Stand-Up\n---\n\nChild body line\n'}
+        out = run_ntn(f, '2026-11-09', getter=lambda pid: pages[pid])
+        assert out['status'] == 'written'
+        assert 'Child body line' in f.read_text()

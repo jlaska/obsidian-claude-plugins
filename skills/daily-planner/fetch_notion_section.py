@@ -24,6 +24,7 @@ child's own URL is used for the Source line automatically.
 
 import argparse
 import json
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -134,24 +135,80 @@ def run(meeting_file: Path, date: str, raw_text: str, notion_url: Optional[str] 
     return _status('written', '', result)
 
 
-# TODO(ntn): fetch via ntn when auth is available.
-#   When a Notion PAT / ``ntn`` approval exists, add an ``--ntn`` mode here that
-#   fetches the page (and the child page on ``needs_child``) itself and passes the
-#   text to ``run``. ``convert`` already accepts either the notion-fetch JSON or
-#   its ``text`` string, so nothing else needs to change. Until then ``--raw-file``
-#   is required.
+def ntn_get(page_id: str, timeout: int = 60) -> str:
+    """Fetch a page as markdown with ``ntn pages get``. Raises RuntimeError on failure."""
+    try:
+        proc = subprocess.run(['ntn', 'pages', 'get', page_id], capture_output=True,
+                              text=True, timeout=timeout)
+    except FileNotFoundError:
+        raise RuntimeError('ntn not installed')
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f'ntn timed out fetching {page_id}')
+    if proc.returncode != 0:
+        msg = (proc.stderr or proc.stdout).strip().splitlines()
+        raise RuntimeError(f'ntn failed for {page_id}: {msg[0] if msg else proc.returncode}')
+    return proc.stdout
+
+
+def run_ntn(meeting_file: Path, date: str, notion_url: Optional[str] = None,
+            vault_root: Optional[Path] = None,
+            getter: Callable[[str], str] = ntn_get) -> dict:
+    """Fetch the meeting's Notion page via ntn (and the child page for index pages)."""
+    if not meeting_file.exists():
+        return _status('error', f'meeting file not found: {meeting_file}')
+    url = notion_url
+    if not url:
+        links = extract_notion_links(parse_frontmatter(meeting_file.read_text()).get('notion', '') or '')
+        url = links[0]['url'] if links else ''
+    links = extract_notion_links(url or '')
+    if not links:
+        return _status('error', 'no Notion URL (pass --notion-url or set notion: frontmatter)')
+    if links[0]['is_database']:
+        return _status('error', 'database view link; link a specific page')
+    try:
+        raw = getter(links[0]['page_id'])
+    except RuntimeError as exc:
+        return _status('error', str(exc))
+    out = run(meeting_file, date, raw, url, vault_root)
+    child = out.get('child_candidate')
+    if out['status'] == 'needs_child' and child:
+        child_links = extract_notion_links(child.get('url', ''))
+        if not child_links:
+            return out
+        try:
+            raw = getter(child_links[0]['page_id'])
+        except RuntimeError as exc:
+            return _status('error', str(exc))
+        out = run(meeting_file, date, raw, child['url'], vault_root)
+    return out
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description='Write Notes from Notion section')
     parser.add_argument('--meeting-file', required=True)
     parser.add_argument('--date', required=True, help='YYYY-MM-DD')
-    parser.add_argument('--raw-file', required=True,
+    parser.add_argument('--ntn', action='store_true',
+                        help='fetch the page with the ntn CLI instead of --raw-file')
+    parser.add_argument('--raw-file',
                         help='file holding the raw notion-fetch result (JSON or its text)')
     parser.add_argument('--notion-url', help='URL for the Source line (default: meeting notion: '
                                              'frontmatter, or the fetched child page URL)')
     parser.add_argument('--vault-root', help='vault root for PEOPLE matching (default: inferred)')
     args = parser.parse_args()
 
+    if args.ntn:
+        try:
+            out = run_ntn(Path(args.meeting_file), args.date, args.notion_url,
+                          Path(args.vault_root) if args.vault_root else None)
+        except Exception as exc:
+            out = _status('error', f'{type(exc).__name__}: {exc}')
+        print(json.dumps(out, ensure_ascii=False))
+        if out['status'] == 'error':
+            print(f"✗ {out['reason']}", file=sys.stderr)
+            return 1
+        return 0
+    if not args.raw_file:
+        parser.error('--raw-file is required unless --ntn is given')
     try:
         raw_text = Path(args.raw_file).read_text(encoding='utf-8')
     except OSError as exc:

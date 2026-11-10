@@ -80,7 +80,7 @@ _HR_RE = re.compile(r'^\s*([-*_])(?:\s*\1){2,}\s*$')
 
 _DATE_VAL = r'(\d{4}-\d{2}-\d{2})'
 _DATE_TAG = r'<date\s+start="' + _DATE_VAL + r'[^"]*"[^>]*?/?>'
-_H1_DATE_RE = re.compile(r'^#[ \t]*' + _DATE_TAG + r'[ \t]*([^\n]*)$', re.M)
+_H1_DATE_RE = re.compile(r'^#{1,2}[ \t]*' + _DATE_TAG + r'[ \t]*([^\n]*)$', re.M)
 _HBLOCK_DATE_RE = re.compile(r'<h([12])>\s*' + _DATE_TAG + r'\s*([^<]*?)\s*</h\1>')
 _TOGGLE_DATE_RE = re.compile(
     r'<toggle\b[^>]*\bheading="h[1-4]"[^>]*>\s*' + _DATE_TAG + r'([^\n]*)'
@@ -702,6 +702,32 @@ def _unwrap(raw) -> Tuple[Optional[str], dict, str]:
     return None, {}, 'unrecognised input'
 
 
+_NTN_FRONTMATTER = re.compile(r'\A---\n(.*?)\n---\n', re.S)
+
+
+def _normalize_ntn(text: str) -> Optional[Tuple[str, str]]:
+    """Convert ``ntn pages get`` markdown into the connector shape.
+
+    Returns ``(body, title)`` or None when the text does not look like ntn output.
+    ntn emits a YAML title header, ``<mention-date/>``, ``<mention-user>``,
+    ``<mention-page>`` and ``<empty-block/>`` instead of the connector's tags.
+    """
+    m = _NTN_FRONTMATTER.match(text)
+    if not m and '<mention-' not in text:
+        return None
+    title = ''
+    body = text
+    if m:
+        body = text[m.end():]
+        t = re.search(r'^title:\s*(.*)$', m.group(1), re.M)
+        if t:
+            title = t.group(1).strip().strip('"\'')
+    body = re.sub(r'<mention-date\b', '<date', body)
+    body = re.sub(r'<(/?)mention-(?:user|page|database|agent)\b', r'<\1mention', body)
+    body = re.sub(r'<empty-block\s*/>', '', body)
+    return body, title
+
+
 def _extract_body(text: str, warnings: List[str]) -> Optional[str]:
     start = text.find('<content>')
     if start == -1:
@@ -874,10 +900,16 @@ def _convert(result: dict, raw, date: Optional[str], max_age_days: int,
         return
     result['url'] = meta.get('url', '')
     body = _extract_body(text, warnings)
+    ntn_title = ''
+    if body is None:
+        ntn = _normalize_ntn(text)
+        if ntn is not None:
+            body, ntn_title = ntn
     if body is None:
         result['reason'] = 'unrecognised Notion output: no <content> block'
         return
-    title = _clean_title(meta.get('title', '')) or _title_from_properties(text)
+    title = (_clean_title(meta.get('title', '')) or ntn_title
+             or _title_from_properties(text))
     result['title'] = title
     body = body.replace('\x01', '')
 
