@@ -331,3 +331,32 @@ class TestFetchTranscriptTabFlags:
         assert '--tab' in cmd
         assert 'Transcript' in cmd
         assert '--results-only' in cmd
+
+
+class TestGeminiAuthErrors:
+
+    def _failed(self, stderr: str):
+        r = MagicMock()
+        r.returncode = 1
+        r.stdout = ''
+        r.stderr = stderr
+        return r
+
+    def test_scope_error_raises_distinct_error(self):
+        err = 'googleapi: Error 403: Request had insufficient authentication scopes'
+        with patch.object(stv, '_run', return_value=self._failed(err)):
+            with pytest.raises(stv.GeminiFetchError):
+                stv.fetch_gemini_notes_tab('docid123')
+
+    def test_missing_tab_error_is_not_auth(self):
+        with patch.object(stv, '_run', return_value=self._failed('tab not found: full notes')):
+            assert stv.fetch_gemini_notes_tab('docid123') is None
+
+    def test_update_reports_auth_failure_not_missing_tab(self, tmp_path, capsys):
+        f = tmp_path / 'm.md'
+        f.write_text('---\ngemini: https://docs.google.com/document/d/abc123/edit\n---\n\n## Actions\n')
+        err = '403 insufficient authentication scopes'
+        with patch.object(stv, '_run', return_value=self._failed(err)):
+            assert stv.update_meeting_with_gemini_notes(f) is False
+        out = capsys.readouterr().out
+        assert 'auth/permission' in out and 'No notes tab found' not in out

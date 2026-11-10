@@ -232,6 +232,24 @@ def _strip_gemini_notes_content(content: str) -> str:
 
 _GEMINI_NOTES_TAB_NAMES = ['full notes', 'quick notes', 'notes']
 
+_AUTH_ERROR_RE = re.compile(
+    r'\b(401|403)\b|insufficient|scope|unauthori[sz]ed|permission|forbidden|auth(?:enticat|oriz)|re-?auth|token',
+    re.I)
+
+
+class GeminiFetchError(Exception):
+    """Raised when gog fails for an auth/permission reason (not a missing tab)."""
+
+
+def _auth_error_reason(result) -> Optional[str]:
+    """Return a one-line reason if a failed gog result looks like an auth/scope problem."""
+    if not result or result.returncode == 0:
+        return None
+    err = result.stderr.strip() if isinstance(result.stderr, str) else ''
+    if err and _AUTH_ERROR_RE.search(err):
+        return err.splitlines()[0][:200]
+    return None
+
 
 def fetch_gemini_notes_tab(doc_id: str) -> Optional[str]:
     """Fetch the notes tab from a Gemini Google Doc and return cleaned markdown.
@@ -243,6 +261,9 @@ def fetch_gemini_notes_tab(doc_id: str) -> Optional[str]:
             ['gog', 'docs', 'cat', '--tab', tab_name, '--raw', '--json', '--results-only', doc_id],
             timeout=30,
         )
+        reason = _auth_error_reason(result)
+        if reason:
+            raise GeminiFetchError(reason)
         if not result or result.returncode != 0 or not result.stdout.strip():
             continue
         try:
@@ -283,7 +304,12 @@ def update_meeting_with_gemini_notes(meeting_file: Path) -> bool:
     if not doc_id:
         return False
     print('  📝 Fetching Gemini notes...')
-    notes_content = fetch_gemini_notes_tab(doc_id)
+    try:
+        notes_content = fetch_gemini_notes_tab(doc_id)
+    except GeminiFetchError as exc:
+        print(f'  ✗ Gemini notes fetch failed (auth/permission, not a missing tab): {exc}')
+        print('    Re-authorize gog with Docs access, `gog auth add <account> --services docs,calendar` (see `gog auth add --help`)')
+        return False
     if not notes_content:
         print(f'  ⚠️  No notes tab found in Gemini doc: {gemini_url}')
         return False
