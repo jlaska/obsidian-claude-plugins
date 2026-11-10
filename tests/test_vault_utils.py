@@ -180,3 +180,14 @@ class TestExtractGeminiSummary:
     def test_returns_empty_without_gemini_section(self):
         content = "## Actions\n\n- [ ] Do stuff\n\n## Agenda\n\n1. Topic"
         assert vault_utils.extract_gemini_summary(content) == ""
+
+
+def test_upsert_section_idempotent_before_h1_heading():
+    """Replacing a section that is directly followed by a level-1 heading is stable."""
+    from vault_utils import upsert_section
+    content = "## Agenda\n\n- a\n\n---\n\n# Recent Meetings\n\n- earlier\n"
+    once = upsert_section(content, "Notes from Notion", "body")
+    assert upsert_section(once, "Notes from Notion", "body") == once
+    changed = upsert_section(once, "Notes from Notion", "new body")
+    assert "new body\n\n# Recent Meetings" in changed
+    assert changed.count("## Notes from Notion") == 1

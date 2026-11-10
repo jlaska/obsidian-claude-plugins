@@ -6,8 +6,10 @@ Functions used by multiple daily-planner scripts (sync_to_vault.py,
 gather_meeting_context.py, etc.).
 """
 
+import html
 import json
 import re
+from urllib.parse import unquote, urlparse, parse_qs
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -44,6 +46,55 @@ def extract_doc_id_from_url(url: str) -> Optional[str]:
     """Extract Google Doc ID from a Google Docs URL."""
     match = re.search(r'/document/d/([a-zA-Z0-9_-]+)', url)
     return match.group(1) if match else None
+
+
+_NOTION_URL_RE = re.compile(
+    r'https?://(?:www\.|app\.)?notion\.(?:so|com|site)/[^\s"\'<>]+', re.IGNORECASE
+)
+_NOTION_ID_RE = re.compile(r'([0-9a-f]{32})(?![0-9a-f])', re.IGNORECASE)
+
+
+def extract_notion_links(text: str) -> List[Dict[str, object]]:
+    """Find Notion page/database links in a calendar event description.
+
+    Handles bare URLs, <a href> anchors, HTML-escaped ``&amp;``, and
+    ``google.com/url?q=`` redirect wrappers. Tracking parameters are dropped;
+    only the ``v`` (database view) parameter is kept.
+
+    Returns a de-duplicated list of ``{url, page_id, is_database}`` dicts,
+    pages first and databases (URLs with ``?v=``) last, in order of appearance.
+    """
+    if not text:
+        return []
+    text = html.unescape(text)
+    found: List[Dict[str, object]] = []
+    seen = set()
+    for match in _NOTION_URL_RE.finditer(text):
+        raw = match.group(0)
+        # Inside a google.com/url?q= wrapper the Notion URL is followed by the
+        # wrapper's own parameters (&sa=..., &source=calendar, &ust=, &usg=).
+        raw = re.split(r'&(?:sa|source=calendar|ust|usg)=', raw, maxsplit=1)[0]
+        raw = unquote(raw).rstrip('.,;)')
+        parsed = urlparse(raw)
+        path = parsed.path.rstrip('/')
+        id_match = _NOTION_ID_RE.search(path.replace('-', '')) if path else None
+        # Prefer the trailing 32-hex id on the last path segment.
+        last = path.rsplit('/', 1)[-1].replace('-', '')
+        tail = _NOTION_ID_RE.findall(last)
+        page_id = (tail[-1] if tail else (id_match.group(1) if id_match else '')).lower()
+        view = parse_qs(parsed.query).get('v', [''])[0]
+        if not page_id:
+            continue
+        key = (page_id, view)
+        if key in seen:
+            continue
+        seen.add(key)
+        url = f'{parsed.scheme}://{parsed.netloc}{path}'
+        if view:
+            url += f'?v={view}'
+        found.append({'url': url, 'page_id': page_id, 'is_database': bool(view)})
+    found.sort(key=lambda d: d['is_database'])  # stable: pages first
+    return found
 
 
 def parse_frontmatter(content: str) -> Dict[str, str]:
@@ -144,6 +195,78 @@ def extract_section(content: str, heading: str, level: int = 2) -> str:
     next_heading = re.search(r'^#{1,' + str(level) + r'}\s', content[start:], re.MULTILINE)
     end = start + next_heading.start() if next_heading else len(content)
     return content[start:end].strip()
+
+
+def extract_section_any_level(content: str, heading: str) -> str:
+    """Like extract_section, but accepts the heading at level 2 or level 1.
+
+    The vault template uses ``## Heading`` while the plugin's default template
+    uses ``# Heading``; notes created from either must be readable.
+    """
+    return extract_section(content, heading, level=2) or extract_section(content, heading, level=1)
+
+
+_RECENT_MEETINGS_RE = re.compile(r'^#{1,2} Recent Meetings\s*$', re.MULTILINE)
+_AGENDA_RE = re.compile(r'^#{1,2} Agenda\s*$', re.MULTILINE)
+
+
+def upsert_section(content: str, title: str, body: str) -> str:
+    """Insert or replace a ``## <title>`` section in a meeting note.
+
+    - If the section exists it is replaced in place (from its heading, including
+      a preceding ``---`` separator, to the next ``---`` or level 1-2 heading).
+    - Otherwise it is inserted before ``Recent Meetings``, else after the
+      ``Agenda`` section, else appended. Both ``#`` and ``##`` headings are
+      recognised for those anchors, so vault and plugin-default templates work.
+
+    Returns the new content. Idempotent for identical input.
+    """
+    heading = f'## {title}'
+    section = f'{heading}\n\n{body}'
+    idx = content.find(heading)
+    if idx != -1:
+        section_start = idx
+        prefix = content[:section_start]
+        for sep in ['\n\n---\n', '\n---\n']:
+            if prefix.endswith(sep):
+                section_start -= len(sep)
+                break
+        search_from = idx + len(heading)
+        sep_idx = content.find('\n---', search_from)
+        heading_match = re.search(r'\n#{1,2} ', content[search_from:])
+        section_end = len(content)
+        if sep_idx != -1 and (heading_match is None or sep_idx <= search_from + heading_match.start()):
+            section_end = sep_idx
+        elif heading_match:
+            section_end = search_from + heading_match.start()
+        tail = content[section_end:].lstrip('\n')
+        return (content[:section_start].rstrip() + '\n\n' + section
+                + ('\n\n' + tail if tail else ''))
+
+    rec_match = _RECENT_MEETINGS_RE.search(content)
+    if rec_match:
+        rec_idx = rec_match.start()
+        insert_before = rec_idx
+        for sep in ['\n---\n', '\n\n---\n']:
+            if content[:rec_idx].endswith(sep):
+                insert_before = rec_idx - len(sep)
+                break
+        return (content[:insert_before].rstrip() + '\n\n' + section
+                + '\n\n' + content[insert_before:].lstrip())
+
+    agenda_match = _AGENDA_RE.search(content)
+    if agenda_match:
+        next_heading = re.search(r'\n#{1,2} ', content[agenda_match.end():])
+        next_section = agenda_match.end() + next_heading.start() if next_heading else -1
+        separator_idx = content.find('\n---', agenda_match.end())
+        insert_idx = len(content)
+        if next_section != -1 and (separator_idx == -1 or next_section < separator_idx):
+            insert_idx = next_section
+        elif separator_idx != -1:
+            insert_idx = separator_idx
+        return content[:insert_idx].rstrip() + '\n\n' + section + '\n\n' + content[insert_idx:].lstrip()
+
+    return content.rstrip() + '\n\n' + section + '\n'
 
 
 def extract_gemini_summary(content: str) -> str:

@@ -1,0 +1,16 @@
+{
+ "metadata": {
+  "type": "page"
+ },
+ "title": "Example Biweekly Stand-Up",
+ "url": "https://app.notion.com/p/bbbb0000cccc1111dddd2222eeee3333?pvs=204",
+ "text": "Here is the result of \"fetch\" for the Page with URL https://app.notion.com/p/bbbb0000cccc1111dddd2222eeee3333 as of 2026-11-09T12:00:00.000Z:\n<page url=\"https://app.notion.com/p/bbbb0000cccc1111dddd2222eeee3333\">\n<ancestor-path></ancestor-path>\n<properties>\n{\"title\": \"Example Biweekly Stand-Up\"}\n</properties>\n<iconMetadata>null</iconMetadata>\n<content>\n<callout color=\"gray_bg\">\n<p>\nBiweekly stand-up for workstream read-outs.\n</p>\n</callout>\n\n<page url=\"https://app.notion.com/p/dddd0000eeee1111ffff2222aaaa3333\">\n11/11 \\| Example Stand-Up \n</page>\n\n<page url=\"https://app.notion.com/p/cccc0000dddd1111eeee2222ffff3333\">\n11/09 \\| Example Stand-Up \n</page>\n\n<page url=\"https://app.notion.com/p/eeee0000ffff1111aaaa2222bbbb5555\">\n11/04 \\| Example Stand-Up\n</page>\n\n<page url=\"https://app.notion.com/p/ffff0000aaaa1111bbbb2222cccc6666\">\n12/29 \\| Example Stand-Up\n</page>\n</content>\n</page>",
+ "cover": null,
+ "icon": null,
+ "full_width": false,
+ "path": "Example Teamspace / Meetings",
+ "verification": {
+  "state": "unverified"
+ },
+ "page_last_edited_at": "2026-11-09T12:00:00.000Z"
+}

@@ -19,7 +19,7 @@ Automates daily planning by fetching Google Calendar events and creating/updatin
 Invoke `/daily-planner` at the start of your day to:
 - Create today's daily note (if it doesn't exist)
 - Create meeting note files for actual meetings (auto-filtered)
-- Enrich meeting files with Google Meet links, descriptions, and document attachments
+- Enrich meeting files with Google Meet links, descriptions, document attachments, and linked Notion notes
 - Match calendar attendees to People notes
 - Link all meetings from the daily note
 - Generate a Meeting Preparation section with previous meeting summaries and suggested topics
@@ -73,6 +73,46 @@ python3 "$SKILL_BASE/sync_to_vault.py" \
 
 **Check stdout** for any errors, warnings about cancelled meetings, or skipped events.
 
+### 3b. Fetch Notion Notes
+
+Many meetings link a Notion page (agenda/notes) in the event description. Step 3 records it as the `notion:` frontmatter key on the meeting file and adds a 📓 link to the daily note's Meetings table. This step pulls the relevant content into a `## Notes from Notion` section, following the same replace-in-place process as `## Notes by Gemini` (refreshed on every run; everything else in the note is untouched). Python scripts cannot call MCP tools, so the agent only does the fetch; `fetch_notion_section.py` does all selection, cleaning and writing deterministically. Do not hand-edit, summarise or select from the fetched content.
+
+```bash
+python3 "$SKILL_BASE/list_notion_meetings.py" --vault-root "$VAULT_ROOT" > "$CACHE_DIR/notion_meetings.json"
+```
+
+Output: JSON array of `{stem, path, start, notion_url, page_id, is_database, has_section}`. If empty, skip this step. Load the Notion tool first: `ToolSearch("select:mcp__claude_ai_Notion__notion-fetch")`.
+
+For each entry (all of today's meetings, past and upcoming):
+
+1. **`is_database: true`** (URL has `?v=`): link only. Do not fetch; the 📓 link already exists.
+2. **Fetch once per `page_id`.** Several series share one page (e.g. both Common Hours series): fetch and save the raw result once, then run the script for each meeting that shares it.
+3. Call `notion-fetch` with `notion_url`.
+4. **Get the raw result into a file.** If the tool result was auto-saved to a file (very large pages), use that path as-is. Otherwise write the tool's returned JSON text verbatim, with no editing or summarising, to `$CACHE_DIR/notion_<page_id>.txt` using a single quoted heredoc:
+
+   ```bash
+   cat > "$CACHE_DIR/notion_<page_id>.txt" <<'NOTION_RAW_EOF'
+   <paste the tool result exactly>
+   NOTION_RAW_EOF
+   ```
+
+5. **Run the converter** (add `--vault-root "$VAULT_ROOT"` so people mentions link to PEOPLE notes):
+
+   ```bash
+   python3 "$SKILL_BASE/fetch_notion_section.py" --meeting-file "<path>" --date "<YYYY-MM-DD of the day being planned>" --raw-file "<raw file>" --vault-root "$VAULT_ROOT"
+   ```
+
+   It prints one JSON line: `{status, reason, matched_dates, child_candidate, warnings}`. It selects the section for the date (exact match, else the most recent earlier section within 14 days, with a visible "Notes from ..." line), writes `## Notes from Notion` with a `Source:` line, and never writes unless the status is `written`.
+
+6. **Act on `status`:**
+   - `written`: done. If `matched_dates` differs from the meeting date, the section says which earlier date it shows.
+   - `no_section`: nothing to write (no section for the date within the window). Report this as "no notes for this date" with the `reason`.
+   - `needs_child`: the page is an index of per-date child pages. Fetch the URL in `child_candidate` with `notion-fetch`, save that result to `$CACHE_DIR/notion_<child page id>.txt` the same way, and re-run step 5 with the child's raw file (the child's own URL is used for the Source line). A child page does not need another `needs_child` round; if it happens, report it.
+   - `error`: report explicitly, naming the meeting and the `reason` (for example not found vs no access). Never report an error as "no notes". Suggest re-authenticating the Notion connector for auth failures. Continue with the remaining meetings.
+   - Also surface any `warnings` briefly.
+
+If `notion-fetch` itself fails, treat it as an `error` the same way (say why, name the meeting, continue).
+
 ### 4. Generate Meeting Preparation
 
 #### 4a. Gather meeting context
@@ -90,7 +130,7 @@ The output is a flat JSON array. Each element has this shape:
 - `status` — `upcoming` or `past` (compare to current time)
 - `type` — `one_on_one` or `group`
 - `attendees` — wikilinks like `[[Person Name]]`
-- `previous_meetings` — list of `{stem, path, gemini_summary, actions_text, agenda_text}`
+- `previous_meetings` — list of `{stem, path, gemini_summary, actions_text, notion_text, agenda_text}`
 - `parking_lot` — list of raw bullet strings from PEOPLE file
 - `is_first_run` — `true` if no `# Meeting Preparation` section exists yet
 
@@ -98,7 +138,7 @@ The output is a flat JSON array. Each element has this shape:
 
 Read the `CONTEXT` JSON array and for each meeting with `status: "upcoming"` (or all if `is_first_run`):
 
-1. **Summarize** each previous meeting: extract a 1-sentence TL;DR (~15 words) from the raw `gemini_summary`, `actions_text`, or `agenda_text` — in that priority order. Use "No summary available" if all are empty.
+1. **Summarize** each previous meeting: extract a 1-sentence TL;DR (~15 words) from the raw `gemini_summary`, `notion_text`, `actions_text`, or `agenda_text` — in that priority order. Use "No summary available" if all are empty.
 
 2. **Generate suggested topics** by reasoning across:
    - Open action items (`- [ ]` items in `actions_text`) → follow-up topics
@@ -132,60 +172,42 @@ After Step 3, check stdout for lines beginning with `⚠️  Cancelled meeting f
 
 ### 6. Needs Attention
 
-Surface stale Linear issues in the tracked teams. Supabase uses Linear (not Jira); this step uses the Linear MCP tools (`mcp__claude_ai_Linear__*`). They are deferred, so load them first with `ToolSearch("select:mcp__claude_ai_Linear__list_issues")`.
+Surface your stale Linear issues. Supabase uses Linear (not Jira); this step uses the Linear MCP tools (`mcp__claude_ai_Linear__*`). They are deferred, so load them first with `ToolSearch("select:mcp__claude_ai_Linear__list_issues")`.
+
+**Scope (for now):** only issues **assigned to you**. Do not include team-wide issues, unassigned issues, or issues you watch/subscribe to (the connector doesn't expose subscribers; see "Future" below).
 
 #### 6a. Gather stale Linear issues
 
-**Tracked teams** (edit this list to change scope):
-- `COMPUTE` with `includeSubTeams: true` (covers Capacity, Branching, Compute - General, Compute - Kubernetes, SupaSi, Multigres Integration)
-- `NET` (Networking)
-
 **Stale definition:** status name is exactly `In Progress` and `updatedAt` is 7 or more days before today. Do not include `In Review`, `Needs Release` or `Blocked`, even though Linear groups them under the `started` type.
 
-Run one call per tracked team:
-
 ```
-list_issues(team="COMPUTE", includeSubTeams=true, state="In Progress", limit=250,
-            fields=["title","team","status","updatedAt","assignee","url","priority"])
-list_issues(team="NET", state="In Progress", limit=250,
-            fields=["title","team","status","updatedAt","assignee","url","priority"])
+list_issues(assignee="me", state="In Progress", limit=250,
+            fields=["title","team","status","updatedAt","url","priority"])
 ```
 
-Page with `cursor` while `hasNextPage` is true. `list_issues` can only filter by "updated after", so compute staleness client-side: `days_stale = today - updatedAt`, keep `days_stale >= 7`. Valid `fields` values include `createdBy` (not `creator`).
-
-Split the stale issues into:
-1. **Assigned to you**: assignee is you (`whoami` / `self.json` identity; Linear display name `jameslaska`, name "James Laska").
-2. **Unassigned**: assignee is null.
-3. **Rest of the tracked teams**: everything else, grouped by assignee.
+Page with `cursor` while `hasNextPage` is true. This is not limited to particular teams. `list_issues` can only filter by "updated after", so compute staleness client-side: `days_stale = today - updatedAt`, keep `days_stale >= 7`. Valid `fields` values include `createdBy` (not `creator`).
 
 #### 6b. AI triage and insert into daily note
 
 Read the daily note at `$DAILY_NOTE` (the absolute path from Step 1).
 
-If there are no stale issues, skip this step entirely (no empty section in the daily note).
+If there are no stale issues, skip this step entirely (no empty section in the daily note). If the section already exists from an earlier run, remove it.
 
-For each non-empty group, generate a callout block with an AI-suggested action for each item. Sort items by days stale, oldest first. Group 3 can be long, so list it by assignee and keep it collapsed. Insert or replace the `# ⚠️ Needs Attention` section in the daily note, positioned **above** `# 📅 Meetings`.
+Generate one callout with an AI-suggested action for each item, sorted by days stale, oldest first. Insert or replace the `# ⚠️ Needs Attention` section in the daily note, positioned **above** `# 📅 Meetings`.
 
 **Callout format:**
 
 ```markdown
 # ⚠️ Needs Attention
 
-> [!warning]- Stale In-Progress Issues Assigned to You (N items)
+> [!warning]- My Stale In-Progress Issues (N items)
 > - **[KUBE-123](https://linear.app/supabase/issue/KUBE-123)** — *Summary* (Team, N days stale)
 >   → **Update status or close if complete**
-
-> [!todo]- Unassigned In-Progress Issues (N items)
-> - **[SUP-38](https://linear.app/supabase/issue/SUP-38)** — *Summary* (Team, N days stale)
->   → **Find an owner or move back to Backlog**
-
-> [!info]- Stale In-Progress Issues in COMPUTE / NET (N items)
-> **Assignee Name**
-> - **[GENCOMP-213](https://linear.app/supabase/issue/GENCOMP-213)** — *Summary* (Team, N days stale)
->   → **Ask for status or ask whether it is still in progress**
 ```
 
 The `→ **bold text**` line is an AI-generated suggested action tailored to each item.
+
+**Future (not implemented):** a second callout "Stale issues I'm watching", and optional team-wide groups for COMPUTE (with sub-teams) and NET.
 
 **Section management:**
 
@@ -204,6 +226,10 @@ Read `$DAILY_NOTE` and check whether `# ⚠️ Needs Attention` already exists.
 | `discover_self.py` | User identity | None (auto-discovers) | JSON: username, emails, display_name, first_name |
 | `discover_events.py` | Calendar fetch + filter | `--self-json`, `--cache-dir`, `--calendars`, `--all-calendars` | JSON: filtered events array |
 | `sync_to_vault.py` | Meeting files + daily note | `--vault-root`, `--events-json`, `--self-json` | Vault files updated; stdout: status + warnings |
+| `list_notion_meetings.py` | Meetings linking a Notion page (for Step 3b) | `--vault-root`, `--date` | JSON: meetings with `notion:` URL, page ID, database flag |
+| `fetch_notion_section.py` | Convert a raw `notion-fetch` result and insert/replace `## Notes from Notion` | `--meeting-file`, `--date`, `--raw-file`, `--notion-url`, `--vault-root` | One JSON status line: `written`, `no_section`, `needs_child` or `error` |
+| `notion_convert.py` | Notion to Obsidian markdown converter (library, small CLI) | raw `notion-fetch` JSON or its text, `--date` | JSON: `status`, `markdown`, `matched_dates`, `child_candidate`, `warnings` |
+| `write_notion_section.py` | Insert/replace `## Notes from Notion` from a ready-made markdown file (manual use) | `--meeting-file`, `--content-file` | Meeting file updated |
 | `gather_meeting_context.py` | Vault introspection for AI prep | `--vault-root`, `--self-json` | JSON: flat array of meetings, each with `is_first_run` |
 | `discover_jira_actions.py` | **Unused** (Supabase uses Linear; Step 6 uses the Linear MCP tools) | `--self-json`, `--projects`, `--stale-days` | JSON: stale assigned + stale created issues |
 | `vault_utils.py` | Shared utilities (library) | — imported by other scripts | — |

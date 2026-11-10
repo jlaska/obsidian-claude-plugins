@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).parent))
-from vault_utils import extract_parking_lot, extract_section, parse_frontmatter
+from vault_utils import extract_parking_lot, extract_section, extract_section_any_level, parse_frontmatter
 
 
 def _run(cmd: list, timeout: int = 15) -> Optional[str]:
@@ -299,7 +299,7 @@ def find_previous_meetings(
 def extract_meeting_context(meeting_file: Path) -> Dict:
     """Extract raw text sections from a previous meeting file.
 
-    Returns a dict with: stem, path, gemini_summary, actions_text, agenda_text.
+    Returns a dict with: stem, path, gemini_summary, actions_text, notion_text, agenda_text.
     These are raw strings for AI to synthesize — not pre-summarized.
     """
     if not meeting_file.exists():
@@ -310,8 +310,9 @@ def extract_meeting_context(meeting_file: Path) -> Dict:
         'path': str(meeting_file),
         'gemini_summary': extract_section(content, 'Summary', level=3)
                           or extract_section(content, 'Notes by Gemini', level=2),
-        'actions_text': extract_section(content, 'Actions', level=2),
-        'agenda_text': extract_section(content, 'Agenda', level=2),
+        'actions_text': extract_section_any_level(content, 'Actions'),
+        'notion_text': extract_section(content, 'Notes from Notion', level=2),
+        'agenda_text': extract_section_any_level(content, 'Agenda'),
     }
 
 

@@ -1,0 +1,138 @@
+Here is the result of "fetch" for the Page with URL https://app.notion.com/p/aaaa0000bbbb1111cccc2222dddd3333 as of 2026-11-09T12:00:00.000Z:
+<page url="https://app.notion.com/p/aaaa0000bbbb1111cccc2222dddd3333">
+<ancestor-path></ancestor-path>
+<properties>
+{"title": "Example Weekly Sync"}
+</properties>
+<iconMetadata>null</iconMetadata>
+<content>
+<toggle>
+Table of contents
+
+<table-of-contents color="gray" />
+</toggle>
+
+<unknown url="https://app.notion.com/p/aaaa0000bbbb1111cccc2222dddd3333#b1" alt="button" />
+
+# <date start="2026-11-09" /> EMEA/AMER
+
+<unknown url="https://app.notion.com/p/aaaa0000bbbb1111cccc2222dddd3333#b2" alt="alias" />
+
+### Topics
+
+<ol>
+<li>
+\[Alex\] [https://status.example.com/incidents/42](https://status.example.com/incidents/42) 
+
+1. Follow-ups
+   <ol>
+   <li>
+   <link-preview url="https://app.notion.com/p/aaaa0000bbbb1111cccc2222dddd3333#b3" source="https://linear.app/example-ws/issue/ABC-101/fix-the-widget" />
+   </li>
+   <li>
+   <link-preview url="https://app.notion.com/p/aaaa0000bbbb1111cccc2222dddd3333#b4" source="https://docs.example.com/page?a=1&amp;b=2" /> 
+
+   <ol>
+   <li>
+   \[Sam\] Needs the platform team.
+   </li>
+   </ol>
+   </li>
+   </ol>
+</li>
+<li>
+\[Sam\] Triage queue
+1. [ABC-7: Upgrade tool (security)](https://linear.app/example-ws/issue/ABC-7/x)
+   1. \[Alex\] I will ping the owner.
+5. [ABC-9: Alert on stale rows](https://linear.app/example-ws/issue/ABC-9/x)
+   <ol>
+   <li>
+   \[Sam\] Will follow up with <mention url="user://11111111-2222-3333-4444-555555555555/alex.example@example.com">Alex Example</mention> 
+   </li>
+   </ol>
+10. [ABC-12: stale head ](https://linear.app/example-ws/issue/ABC-12/x)[<code>main</code>](https://linear.app/example-ws/issue/ABC-12/x)
+</li>
+<li>
+\[Alex\] We are not enforcing quotas.
+</li>
+<li></li>
+</ol>
+
+Discussion: [slackMessage://example.slack.com/C0AAAAAAA1/1790000000.123456/1790000000.123456](slackMessage://example.slack.com/C0AAAAAAA1/1790000000.123456/1790000000.123456) and a reply [slackMessage://example.slack.com/C0AAAAAAA1/1790000100.000200/1790000000.123456](slackMessage://example.slack.com/C0AAAAAAA1/1790000100.000200/1790000000.123456)
+
+## :example-icon: Decisions
+
+- \[Sam\] <b>Proposal: shared place</b>
+  - nested bullet
+- [ ] open task
+- [x] done task
+- 
+
+<callout icon="💡">
+<p>
+Heads up: freeze starts Friday
+</p>
+</callout>
+
+<synced-block>
+Synced <span discussion-urls="[]">wor</span><span discussion-urls="[]">d</span> text
+</synced-block>
+
+Inline: <i>italic</i>, <s>gone</s>, <code>a`b</code>, un<b>bold</b>ed, due <date start="2026-12-01" />, see <mention url="https://app.notion.com/p/eeee0000ffff1111aaaa2222bbbb3333">Planning Doc</mention> and <mention url="https://app.notion.com/p/eeee0000ffff1111aaaa2222bbbb4444"/>.
+<mention url="user://11111111-2222-3333-4444-555555555555/nobody@example.com">Pat Nobody</mention> joined. Escapes: \_under\_ \~tilde\~ \{brace\} \$5 \*star\* a \| pipe, `keep \_this\_`.
+
+<image source="notion-file-block://aaaa0000-bbbb-1111-cccc-2222dddd3333/f1?space_id=sp1&name=diagram.png" />
+<file source="notion-file-block://aaaa0000-bbbb-1111-cccc-2222dddd3333/f2?space_id=sp1&name=report.pdf" />
+<embed source="https://example.com/embed" />
+
+<table header-row="true">
+<tr>
+<td>
+Area
+</td>
+<td>
+Update | Notes
+</td>
+</tr>
+<tr>
+<td>
+Storage
+</td>
+<td>
+  • one<br />  • two
+</td>
+</tr>
+<tr>
+<td>
+Empty
+</td>
+<td></td>
+</tr>
+</table>
+
+<toggle>
+Details toggle
+
+Hidden **body** text
+</toggle>
+
+<p />
+
+# <date start="2026-11-06" /> EMEA
+
+### Topics
+
+1. \[Sam\] Older notes
+
+<h2>
+<date start="2026-11-02" />
+</h2>
+
+Monday notes
+
+# Archive
+
+Old archive text with <date start="2026-11-09" /> mid-line date.
+
+</content>
+</page>
