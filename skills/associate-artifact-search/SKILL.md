@@ -1,12 +1,12 @@
 ---
 name: associate-artifact-search
-description: Search Jira, GitHub, GitLab, Google Drive, and Gmail for an associate's work products (issues, PRs, commits, reviews, comments, documents, email threads) over a configurable time window.
+description: Search Jira, Linear, GitHub, GitLab, Google Drive, and Gmail for an associate's work products (issues, PRs, commits, reviews, comments, documents, email threads) over a configurable time window.
 category: Fleet Engineering
 ---
 
 # Associate Artifact Search
 
-Gather an associate's work products across Jira, GitHub, GitLab, Google Drive, and Gmail for a given time window. Each platform is queried by a dedicated script that outputs structured JSON; the skill then produces a markdown highlight summary.
+Gather an associate's work products across Jira, Linear, GitHub, GitLab, Google Drive, and Gmail for a given time window. All sources are read-only discovery. Each platform is queried by a dedicated script that outputs structured JSON; the skill then produces a markdown highlight summary.
 
 ---
 
@@ -27,6 +27,7 @@ If the user provided a person name, attempt to look up their People note for pre
    - **GitLab username**: From the `social` list, find a URL matching `https://gitlab.com/<user>` or `https://gitlab.cee.redhat.com/<user>` and extract `<user>`. If no GitLab URL is in the `social` list but the email is `@redhat.com`, derive the GitLab username from the email prefix (e.g., `jbalunas@redhat.com` → `jbalunas`, defaulting to `https://gitlab.cee.redhat.com/jbalunas`)
    - **Email**: Read the `mail` field (Red Hat contacts) or `email` field (external contacts)
    - **Jira identity**: Use the same email value (search_jira.py resolves email → account ID)
+   - **Linear identity**: Use the same email value (resolved to a Linear user in Step 2 via the Linear MCP `list_users`)
    - **Google email**: Use the same email value
 
 4. Pass any discovered values as defaults to Step 1.
@@ -39,13 +40,18 @@ If the user provided a person name, attempt to look up their People note for pre
 
 Use `AskUserQuestion` with the following questions across two calls:
 
-**Call 1** — Identity (4 questions):
+**Call 1** — Identity (5 questions):
 
 **Q1** (header: `Jira identity`): "How should we identify the associate in Jira?"
 - "By email address" — user enters the email via the Other field
 - "By Jira account ID" — user enters the ID (format: `accountType:uuid`) via Other
 - "From a Jira issue URL" — user provides a URL via Other; agent extracts reporter/assignee account ID
 - "Skip Jira" — exclude Jira from this search
+
+**Q1b** (header: `Linear`): "How should we identify the associate in Linear?"
+- "By email address" — user enters the email via the Other field (often the same as their Jira email)
+- "By name or Linear user ID" — user enters it via Other
+- "Skip Linear" — exclude Linear from this search
 
 **Q2** (header: `GitHub`): "What is the associate's GitHub username?"
 - "Enter GitHub username" — user types it via the Other field
@@ -90,6 +96,17 @@ curl -s -u "$JIRA_EMAIL:$JIRA_TOKEN" \
 
 If the user chose "From a Jira issue URL", view the issue with `--fields reporter` via `acli jira workitem view <KEY> --fields "reporter" --json` and extract `fields.reporter.accountId`.
 
+### Linear user
+
+Linear is resolved through the Linear MCP server first. The search script then uses the resolved user ID.
+
+1. Call `mcp__claude_ai_Linear__list_users` with `query=<associate-email>` (or the name, if no email).
+2. If exactly one user matches, pass that user's `id` as `--linear-user`.
+3. If several users match, prefer the one whose `email` equals the People note email. Otherwise ask the user to pick.
+4. If nothing matches (or the Linear MCP is unavailable), pass the raw email as `--linear-user`; the script tries an email lookup through the GraphQL API. If that also fails, ask the user for a name or Linear user ID. Do not guess.
+
+`search_linear.py` needs `LINEAR_API_KEY` in the environment (personal API key from Linear > Settings > Security & access). If it is unset, tell the user how to create one and continue with the other sources.
+
 ### Timeframe → dates
 
 | Selection | --since | --until |
@@ -110,6 +127,12 @@ Run each selected tool's script independently. All scripts write JSON to stdout.
 # Jira (if not skipped)
 uv run skills/associate-artifact-search/search_jira.py \
   --jira-id <account-id-or-email> \
+  --since <YYYY-MM-DD> --until <YYYY-MM-DD> \
+  [--name "<Display Name>"]
+
+# Linear (if not skipped; requires LINEAR_API_KEY)
+uv run skills/associate-artifact-search/search_linear.py \
+  --linear-user <user-id-or-email-or-name> \
   --since <YYYY-MM-DD> --until <YYYY-MM-DD> \
   [--name "<Display Name>"]
 
@@ -162,13 +185,26 @@ Parse the JSON output and produce a markdown summary with one section per tool s
 
 If no Jira activity is found, note that explicitly rather than omitting the section.
 
+### Linear
+- **Created** — issues the associate opened (identifier, title, team, status)
+- **Completed** — issues assigned to them that reached a completed state in the window
+- **Status changes** — issues where they moved the workflow state (from → to, date)
+- **Updated** — assigned issues touched in the window, grouped by project or cycle
+- **Comments** — group by `context` (`issue`, `document`, `project`, `project_update`, `initiative`) and name `context_title`; for issues include the identifier. Give a brief description of the substance (do not paste long bodies)
+- **Linked PRs** — each issue's `linked` entries (GitHub/GitLab attachments). Match PRs to issues using these attachments or the issue identifier in PR titles, not `branch`: Linear generates `branch` from the API key owner's username, so it does not reflect the associate. When a linked PR also appears in the GitHub `authored_prs` (or GitLab) results, show them together (identifier → PR) rather than listing them twice. A PR linked from Linear that GitHub did not return is still real work: list it as Linear-linked instead of dropping it.
+
+If the script reports an error (for example a missing `LINEAR_API_KEY`), state that Linear was not searched and why. If there is no activity, say so explicitly.
+
 ### GitHub
-- **Commits / Pushes** — grouped by repo; list branch and commit messages
-- **Pull Requests** — opened and merged, with titles and repos
-- **PR Reviews** — approvals, change requests, comments (repo + PR title)
-- **Issues** — closed/opened with titles
-- **Issue Comments** — repo and issue title
-- **Releases** — tag, name, repo
+
+The script combines `gh search` (covers private and org-internal repos you can read) with the public events feed (which returns nothing for private/internal repos). Prefer the search-based sections; use the events-based ones as a supplement.
+
+- **Authored PRs** (`authored_prs`) — grouped by repo; title, state, and whether it was merged in the window (`merged_in_window`). A PR created before the window but merged inside it is still in scope.
+- **Commits** (`commits`, plus `pushes` from events) — grouped by repo; first line of the message. The two lists overlap; `summary.commits` is already de-duplicated by SHA.
+- **PR reviews** (`reviewed_prs`) — other people's PRs the associate reviewed in the window: repo, PR title, author, and the review states (APPROVED, CHANGES_REQUESTED, COMMENTED). Call out change requests, since they show substantive review.
+- **PR comments** (`commented_prs`) — other people's PRs where the associate left conversation comments in the window.
+- **Issues**, **Issue Comments**, **Releases**, **Branches created** — from the events feed (`issues`, `issue_comments`, `releases`, `creates`); typically only public repos.
+- If `warnings` is non-empty (for example the events feed or a search failed, or results were truncated), mention it. Do not present an empty GitHub section as "no activity" when a source failed.
 
 ### GitLab
 - Events grouped by action (approved, commented on, pushed, etc.)
@@ -183,7 +219,7 @@ If no Jira activity is found, note that explicitly rather than omitting the sect
 
 ### Summary
 End with a 3–5 sentence paragraph naming the associate and calling out:
-- Where their effort was concentrated (which platform, which repos/projects)
+- Where their effort was concentrated (which platform, which repos/projects/Linear teams)
 - Notable deliverables (releases, merged PRs, closed issue clusters, Drive documents)
 - Any gaps (e.g. no Jira activity, GitLab inactive since date X)
 
@@ -192,6 +228,7 @@ End with a 3–5 sentence paragraph naming the associate and calling out:
 ## Supporting files
 
 - `skills/associate-artifact-search/search_jira.py` — Jira REST API with changelog expansion; reads credentials from acli config + macOS keychain
-- `skills/associate-artifact-search/search_gh.py` — GitHub public events via `gh api --paginate`
+- `skills/associate-artifact-search/search_linear.py` — Linear GraphQL API (read-only); needs `LINEAR_API_KEY`. Finds created, completed, updated, status-transition, and comment activity by user
+- `skills/associate-artifact-search/search_gh.py` — GitHub PRs, reviews, comments and commits via `gh search` (private/internal repos included), supplemented by public events via `gh api`
 - `skills/associate-artifact-search/search_glab.py` — GitLab user events via `glab api`
 - `skills/associate-artifact-search/search_gog.py` — Google Drive (Docs/Sheets/Slides/Forms) and Gmail via the `gog` CLI

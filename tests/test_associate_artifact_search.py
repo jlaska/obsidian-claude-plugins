@@ -5,6 +5,7 @@ All tests use mocked external dependencies (gh, glab, gog CLIs; Jira API).
 
 import json
 import sys
+import urllib.error
 import urllib.request
 from datetime import date
 from io import BytesIO
@@ -20,6 +21,7 @@ import search_gh
 import search_glab
 import search_gog
 import search_jira
+import search_linear
 
 
 # ---------------------------------------------------------------------------
@@ -36,6 +38,20 @@ def _run_main(module, argv, mock_subprocess_side_effect=None, capsys=None):
             module.main()
     out = capsys.readouterr().out if capsys else ""
     return json.loads(out) if out.strip() else {}
+
+
+_EMPTY_SEARCH = {"authored_prs": [], "reviewed_prs": [], "commented_prs": [], "commits": []}
+
+
+@pytest.fixture(autouse=True)
+def _stub_gh_search(request):
+    """Legacy search_gh tests only mock the events feed; keep `gh search` off the network."""
+    if request.cls is not None and request.cls.__name__.startswith("TestGh") \
+            and not request.cls.__name__.startswith("TestGhSearch"):
+        with patch("search_gh.search_activity", return_value=dict(_EMPTY_SEARCH)):
+            yield
+    else:
+        yield
 
 
 def _make_completed(stdout_json, returncode=0):
@@ -269,12 +285,26 @@ class TestGhSummaryStats:
 class TestGhErrorPath:
     def test_gh_events_none_exits_nonzero(self, capsys):
         argv = ["search_gh.py", "--github-user", "bad", "--since", "2025-01-01", "--until", "2025-01-07"]
-        with patch("search_gh.gh_events", return_value=None):
+        with patch("search_gh.gh_events", return_value=None), \
+             patch("search_gh.search_activity", return_value=None):
             with pytest.raises(SystemExit) as exc:
                 _run_main(search_gh, argv, capsys=capsys)
         assert exc.value.code == 1
         out = capsys.readouterr().out
         assert "error" in json.loads(out)
+
+    def test_events_failure_alone_is_a_warning(self, capsys):
+        argv = ["search_gh.py", "--github-user", "u", "--since", "2025-01-01", "--until", "2025-01-07"]
+        with patch("search_gh.gh_events", return_value=None):
+            result = _run_main(search_gh, argv, capsys=capsys)
+        assert any("events feed unavailable" in w for w in result["warnings"])
+
+    def test_search_failure_alone_is_a_warning(self, capsys):
+        argv = ["search_gh.py", "--github-user", "u", "--since", "2025-01-01", "--until", "2025-01-07"]
+        with patch("search_gh.gh_events", return_value=[]), \
+             patch("search_gh.search_activity", return_value=None):
+            result = _run_main(search_gh, argv, capsys=capsys)
+        assert any("gh search unavailable" in w for w in result["warnings"])
 
 
 # ===========================================================================
@@ -911,3 +941,408 @@ class TestJiraErrorPaths:
         assert exc.value.code == 1
         out = capsys.readouterr().out
         assert "error" in json.loads(out)
+
+
+# ===========================================================================
+# search_linear.py
+# ===========================================================================
+
+_UID = "74816ec0-5514-4584-9eff-5f8e22a99662"
+
+
+def _linear_resp(data=None, errors=None):
+    """Mock urlopen context manager returning a GraphQL payload."""
+    payload = {}
+    if data is not None:
+        payload["data"] = data
+    if errors is not None:
+        payload["errors"] = errors
+    resp = MagicMock()
+    resp.read.return_value = json.dumps(payload).encode()
+    resp.__enter__ = lambda s: s
+    resp.__exit__ = MagicMock(return_value=False)
+    return resp
+
+
+def _issue(identifier="ENG-1", **over):
+    base = {
+        "identifier": identifier, "title": "Do thing", "url": f"https://linear.app/x/issue/{identifier}",
+        "branchName": f"me/{identifier.lower()}-do-thing",
+        "createdAt": "2026-11-10T12:00:00.000Z", "updatedAt": "2026-11-11T12:00:00.000Z",
+        "completedAt": None, "state": {"name": "In Progress", "type": "started"},
+        "team": {"key": "ENG"}, "project": {"name": "Proj"}, "cycle": {"number": 3},
+        "labels": {"nodes": [{"name": "bug"}]},
+        "attachments": {"nodes": [{"url": "https://github.com/o/r/pull/9", "sourceType": "github", "title": "PR"}]},
+    }
+    base.update(over)
+    return base
+
+
+class TestLinearParseDate:
+    def test_iso(self):
+        assert search_linear.parse_date("2026-11-17") == date(2026, 11, 17)
+
+    def test_invalid(self):
+        with pytest.raises(ValueError):
+            search_linear.parse_date("nope")
+
+
+class TestLinearGraphql:
+    def test_returns_data(self):
+        with patch("search_linear.urllib.request.urlopen", return_value=_linear_resp({"viewer": {"id": "1"}})):
+            assert search_linear.graphql("k", "q") == {"viewer": {"id": "1"}}
+
+    def test_sends_raw_key_without_bearer(self):
+        with patch("search_linear.urllib.request.urlopen", return_value=_linear_resp({})) as uo:
+            search_linear.graphql("lin_api_x", "q")
+        assert uo.call_args[0][0].get_header("Authorization") == "lin_api_x"
+
+    def test_graphql_errors_raise(self):
+        with patch("search_linear.urllib.request.urlopen",
+                   return_value=_linear_resp(errors=[{"message": "bad filter"}])):
+            with pytest.raises(search_linear.LinearError, match="bad filter"):
+                search_linear.graphql("k", "q")
+
+    def test_network_error_raises(self):
+        with patch("search_linear.urllib.request.urlopen", side_effect=OSError("down")):
+            with pytest.raises(search_linear.LinearError):
+                search_linear.graphql("k", "q")
+
+
+class TestLinearPaginate:
+    def test_follows_cursor(self):
+        pages = [
+            _linear_resp({"issues": {"nodes": [{"a": 1}], "pageInfo": {"hasNextPage": True, "endCursor": "c1"}}}),
+            _linear_resp({"issues": {"nodes": [{"a": 2}], "pageInfo": {"hasNextPage": False, "endCursor": None}}}),
+        ]
+        with patch("search_linear.urllib.request.urlopen", side_effect=pages):
+            nodes = search_linear.paginate("k", "q", {}, "issues")
+        assert nodes == [{"a": 1}, {"a": 2}]
+
+    def test_caps_pages(self):
+        forever = _linear_resp({"issues": {"nodes": [{"a": 1}], "pageInfo": {"hasNextPage": True, "endCursor": "c"}}})
+        with patch("search_linear.urllib.request.urlopen", return_value=forever):
+            nodes = search_linear.paginate("k", "q", {}, "issues")
+        assert len(nodes) == search_linear.MAX_PAGES
+
+
+class TestLinearResolveUser:
+    def test_email_lookup(self):
+        user = {"id": _UID, "name": "J", "displayName": "j", "email": "j@x.com"}
+        with patch("search_linear.urllib.request.urlopen",
+                   return_value=_linear_resp({"users": {"nodes": [user]}})) as uo:
+            assert search_linear.resolve_user("j@x.com", "k") == user
+        sent = json.loads(uo.call_args[0][0].data)
+        assert sent["variables"]["filter"] == {"email": {"eq": "j@x.com"}}
+
+    def test_uuid_lookup(self):
+        user = {"id": _UID, "name": "J", "displayName": "j", "email": "j@x.com"}
+        with patch("search_linear.urllib.request.urlopen", return_value=_linear_resp({"user": user})):
+            assert search_linear.resolve_user(_UID, "k") == user
+
+    def test_name_lookup_uses_or_filter(self):
+        with patch("search_linear.urllib.request.urlopen",
+                   return_value=_linear_resp({"users": {"nodes": []}})) as uo:
+            assert search_linear.resolve_user("Jane Doe", "k") is None
+        sent = json.loads(uo.call_args[0][0].data)
+        assert "or" in sent["variables"]["filter"]
+
+
+class TestLinearFormatting:
+    def test_window_inclusive_bounds(self):
+        w = search_linear.window(date(2026, 11, 1), date(2026, 11, 7))
+        assert w == {"gte": "2026-11-01T00:00:00.000Z", "lte": "2026-11-07T23:59:59.999Z"}
+
+    def test_fmt_issue(self):
+        out = search_linear.fmt_issue(_issue())
+        assert out["identifier"] == "ENG-1"
+        assert out["status_type"] == "started"
+        assert out["created"] == "2026-11-10"
+        assert out["completed"] is None
+        assert out["labels"] == ["bug"]
+        assert out["linked"][0]["source"] == "github"
+
+    def test_fmt_issue_handles_nulls(self):
+        out = search_linear.fmt_issue({"identifier": "ENG-2", "state": None, "project": None,
+                                       "cycle": None, "labels": None, "attachments": None})
+        assert out["project"] is None and out["labels"] == [] and out["linked"] == []
+
+    def test_fmt_comment_truncates(self):
+        c = {"createdAt": "2026-11-10T00:00:00Z", "body": "x" * 1000, "issue": {"identifier": "ENG-1"}}
+        out = search_linear.fmt_comment(c)
+        assert out["body"].endswith("…")
+        assert len(out["body"]) == search_linear.COMMENT_TRUNCATE + 1
+
+
+class TestLinearStatusChanges:
+    def _hist(self, actor, day, to="Done", to_type="completed"):
+        return {"createdAt": f"{day}T10:00:00.000Z", "actor": {"id": actor},
+                "fromState": {"name": "In Progress"}, "toState": {"name": to, "type": to_type}}
+
+    def test_only_user_transitions_in_window(self):
+        issue = _issue(history={"nodes": [
+            self._hist(_UID, "2026-11-11"),                      # keep
+            self._hist("someone-else", "2026-11-11"),            # wrong actor
+            self._hist(_UID, "2026-10-01"),                      # before window
+            {"createdAt": "2026-11-11T10:00:00Z", "actor": {"id": _UID}, "toState": None},  # not a state change
+        ]})
+        out = search_linear.status_changes_by([issue], _UID, "2026-11-01", "2026-11-17")
+        assert len(out) == 1
+        assert out[0]["transitions"] == [
+            {"date": "2026-11-11", "from": "In Progress", "to": "Done", "to_type": "completed"}]
+
+    def test_no_transitions_omitted(self):
+        assert search_linear.status_changes_by([_issue(history={"nodes": []})], _UID, "a", "b") == []
+
+
+class TestLinearMain:
+    ARGV = ["search_linear.py", "--linear-user", "j@x.com", "--since", "2026-11-01", "--until", "2026-11-17"]
+
+    def test_missing_api_key(self, capsys, monkeypatch):
+        monkeypatch.delenv("LINEAR_API_KEY", raising=False)
+        with patch.object(sys, "argv", self.ARGV), pytest.raises(SystemExit) as e:
+            search_linear.main()
+        assert e.value.code == 1
+        assert "LINEAR_API_KEY" in json.loads(capsys.readouterr().out)["error"]
+
+    def test_unresolved_user(self, capsys, monkeypatch):
+        monkeypatch.setenv("LINEAR_API_KEY", "k")
+        with patch.object(sys, "argv", self.ARGV), \
+             patch("search_linear.resolve_user", return_value=None), pytest.raises(SystemExit):
+            search_linear.main()
+        assert "Could not resolve" in json.loads(capsys.readouterr().out)["error"]
+
+    def test_api_error_reported_as_json(self, capsys, monkeypatch):
+        monkeypatch.setenv("LINEAR_API_KEY", "k")
+        with patch.object(sys, "argv", self.ARGV), \
+             patch("search_linear.resolve_user", side_effect=search_linear.LinearError("boom")), \
+             pytest.raises(SystemExit):
+            search_linear.main()
+        assert json.loads(capsys.readouterr().out)["error"] == "boom"
+
+    def test_full_run(self, capsys, monkeypatch):
+        monkeypatch.setenv("LINEAR_API_KEY", "k")
+        user = {"id": _UID, "name": "James", "displayName": "j", "email": "j@x.com"}
+        issue_hist = _issue("ENG-5", history={"nodes": [{
+            "createdAt": "2026-11-11T10:00:00Z", "actor": {"id": _UID},
+            "fromState": {"name": "Todo"}, "toState": {"name": "Done", "type": "completed"}}]})
+        comment = {"createdAt": "2026-11-12T00:00:00Z", "body": "hi", "url": "u",
+                   "issue": {"identifier": "ENG-5", "title": "t"}}
+
+        def fake_paginate(key, query, variables, connection):
+            if connection == "comments":
+                return [comment]
+            if query is search_linear.ISSUES_WITH_HISTORY_QUERY:
+                return [issue_hist]
+            return [_issue("ENG-1")]
+
+        with patch.object(sys, "argv", self.ARGV), \
+             patch("search_linear.resolve_user", return_value=user), \
+             patch("search_linear.paginate", side_effect=fake_paginate):
+            search_linear.main()
+        out = json.loads(capsys.readouterr().out)
+        assert out["associate"]["linear_user_id"] == _UID
+        assert out["summary"] == {"created": 1, "completed": 1, "updated": 1,
+                                  "status_changes": 1, "comments": 1}
+        assert out["timeframe"] == {"since": "2026-11-01", "until": "2026-11-17"}
+
+
+class TestLinearCommentContext:
+    def test_issue_comment(self):
+        out = search_linear.fmt_comment({"createdAt": "2026-11-01T00:00:00Z", "body": "x",
+                                         "issue": {"identifier": "ENG-1", "title": "T", "url": "u"}})
+        assert out["context"] == "issue" and out["issue"] == "ENG-1"
+
+    def test_inline_description_comment_uses_document_content_issue(self):
+        out = search_linear.fmt_comment({"createdAt": "2026-11-01T00:00:00Z", "body": "x", "issue": None,
+                                         "documentContent": {"issue": {"identifier": "ENG-9", "title": "T"}}})
+        assert out["context"] == "issue" and out["issue"] == "ENG-9"
+
+    def test_document_comment(self):
+        out = search_linear.fmt_comment({"createdAt": "2026-11-01T00:00:00Z", "body": "x", "issue": None,
+                                         "documentContent": {"issue": None, "document": {"title": "PRD", "url": "d"}}})
+        assert (out["context"], out["context_title"], out["issue"]) == ("document", "PRD", None)
+
+    def test_project_update_comment(self):
+        out = search_linear.fmt_comment({"createdAt": "2026-11-01T00:00:00Z", "body": "x",
+                                         "projectUpdate": {"url": "pu", "project": {"name": "Proj"}}})
+        assert (out["context"], out["context_title"]) == ("project_update", "Proj")
+
+    def test_unknown_parent(self):
+        assert search_linear.fmt_comment({"createdAt": "2026-11-01T00:00:00Z", "body": "x"})["context"] is None
+
+
+class TestLinearHttpError:
+    def test_http_400_surfaces_graphql_message(self):
+        body = json.dumps({"errors": [{"message": "Field \"nope\" not found"}]}).encode()
+        err = urllib.error.HTTPError("u", 400, "Bad Request", {}, BytesIO(body))
+        with patch("search_linear.urllib.request.urlopen", side_effect=err):
+            with pytest.raises(search_linear.LinearError, match="nope"):
+                search_linear.graphql("k", "q")
+
+    def test_http_error_without_json_body(self):
+        err = urllib.error.HTTPError("u", 502, "Bad Gateway", {}, BytesIO(b"<html>"))
+        with patch("search_linear.urllib.request.urlopen", side_effect=err):
+            with pytest.raises(search_linear.LinearError, match="request failed"):
+                search_linear.graphql("k", "q")
+
+
+# ---------------------------------------------------------------------------
+# search_gh.py — search-based collection (covers private/internal repos)
+# ---------------------------------------------------------------------------
+
+def _spr(number, repo="org/repo", author="u", state="merged", created="2026-11-05T00:00:00Z",
+         updated="2026-11-06T00:00:00Z"):
+    return {"number": number, "title": f"PR {number}", "repository": {"nameWithOwner": repo},
+            "author": {"login": author}, "state": state, "createdAt": created,
+            "updatedAt": updated, "closedAt": updated, "url": f"https://x/{number}", "isDraft": False}
+
+
+class TestGhSearch:
+    def test_success(self):
+        with patch("search_gh.subprocess.run", return_value=_make_completed([{"number": 1}])):
+            assert search_gh.gh_search("prs", ["--author", "u"], "number") == [{"number": 1}]
+
+    def test_command_shape(self):
+        with patch("search_gh.subprocess.run", return_value=_make_completed([])) as run:
+            search_gh.gh_search("commits", ["--author", "u"], "sha")
+        cmd = run.call_args[0][0]
+        assert cmd[:3] == ["gh", "search", "commits"] and "--json" in cmd and "--limit" in cmd
+
+    def test_failure_returns_none(self):
+        r = MagicMock(returncode=1, stdout="", stderr="boom")
+        with patch("search_gh.subprocess.run", return_value=r):
+            assert search_gh.gh_search("prs", [], "number") is None
+
+    def test_exception_returns_none(self):
+        with patch("search_gh.subprocess.run", side_effect=FileNotFoundError):
+            assert search_gh.gh_search("prs", [], "number") is None
+
+
+class TestGhSearchActivity:
+    def _run(self, by_kind, activity=None, user="u"):
+        """by_kind maps the first distinguishing flag -> rows; activity maps number -> gh pr view payload."""
+        def fake_search(kind, flags, fields):
+            if kind == "commits":
+                return by_kind.get("commits", [])
+            for flag in ("--created", "--merged-at", "--reviewed-by", "--commenter"):
+                if flag in flags:
+                    return by_kind.get(flag)
+            raise AssertionError(flags)
+
+        def fake_activity(repo, number):
+            return (activity or {}).get(number, {"reviews": [], "comments": []})
+
+        warnings = []
+        with patch("search_gh.gh_search", side_effect=fake_search), \
+             patch("search_gh.gh_pr_activity", side_effect=fake_activity):
+            out = search_gh.search_activity(user, "2026-11-01", "2026-11-17", warnings)
+        return out, warnings
+
+    def test_authored_union_dedupes_and_flags_merge(self):
+        out, _ = self._run({"--created": [_spr(1), _spr(2)], "--merged-at": [_spr(2), _spr(3)]})
+        by_num = {e["number"]: e for e in out["authored_prs"]}
+        assert set(by_num) == {1, 2, 3}
+        assert by_num[1]["merged_in_window"] is False
+        assert by_num[2]["created_in_window"] and by_num[2]["merged_in_window"]
+        assert by_num[3]["created_in_window"] is False and by_num[3]["merged_in_window"] is True
+
+    def test_reviews_filtered_to_user_and_window(self):
+        activity = {10: {"reviews": [
+            {"author": {"login": "u"}, "submittedAt": "2026-11-05T00:00:00Z", "state": "APPROVED"},
+            {"author": {"login": "other"}, "submittedAt": "2026-11-05T00:00:00Z", "state": "APPROVED"},
+            {"author": {"login": "U"}, "submittedAt": "2026-10-01T00:00:00Z", "state": "COMMENTED"},
+        ], "comments": []}}
+        out, _ = self._run({"--reviewed-by": [_spr(10, author="peer")], "--commenter": []}, activity)
+        assert len(out["reviewed_prs"]) == 1
+        assert out["reviewed_prs"][0]["reviews"] == [{"date": "2026-11-05", "state": "APPROVED"}]
+        assert out["commented_prs"] == []
+
+    def test_updated_by_others_only_is_dropped(self):
+        activity = {11: {"reviews": [{"author": {"login": "other"}, "submittedAt": "2026-11-05T00:00:00Z",
+                                      "state": "APPROVED"}],
+                         "comments": [{"author": {"login": "other"}, "createdAt": "2026-11-05T00:00:00Z"}]}}
+        out, _ = self._run({"--reviewed-by": [_spr(11, author="peer")],
+                            "--commenter": [_spr(11, author="peer")]}, activity)
+        assert out["reviewed_prs"] == [] and out["commented_prs"] == []
+
+    def test_own_prs_excluded_from_reviewed(self):
+        out, _ = self._run({"--reviewed-by": [_spr(12, author="u")], "--commenter": []},
+                           {12: {"reviews": [{"author": {"login": "u"},
+                                              "submittedAt": "2026-11-05T00:00:00Z", "state": "COMMENTED"}]}})
+        assert out["reviewed_prs"] == []
+
+    def test_comments_collected(self):
+        activity = {13: {"reviews": [], "comments": [
+            {"author": {"login": "u"}, "createdAt": "2026-11-05T00:00:00Z", "url": "c"}]}}
+        out, _ = self._run({"--reviewed-by": [], "--commenter": [_spr(13, author="peer")]}, activity)
+        assert out["commented_prs"][0]["comments"] == [{"date": "2026-11-05", "url": "c"}]
+
+    def test_commits_parsed(self):
+        commits = [{"repository": {"fullName": "org/r"}, "sha": "abcdef1234567890",
+                    "commit": {"message": "fix: thing\n\nbody", "committer": {"date": "2026-11-02T10:00:00Z"}},
+                    "url": "u"}]
+        out, _ = self._run({"commits": commits})
+        assert out["commits"] == [{"repo": "org/r", "sha": "abcdef12", "date": "2026-11-02",
+                                   "message": "fix: thing", "url": "u"}]
+
+    def test_partial_failure_warns(self):
+        out, warnings = self._run({"--created": [_spr(1)], "--merged-at": None})
+        assert out is not None and any("merged" in w for w in warnings)
+
+    def test_all_failures_return_none(self):
+        with patch("search_gh.gh_search", return_value=None):
+            assert search_gh.search_activity("u", "2026-11-01", "2026-11-17", []) is None
+
+    def test_unverifiable_pr_warns_and_is_omitted(self):
+        def fake_search(kind, flags, fields):
+            return [_spr(14, author="peer")] if "--reviewed-by" in flags else []
+        warnings = []
+        with patch("search_gh.gh_search", side_effect=fake_search), \
+             patch("search_gh.gh_pr_activity", return_value=None):
+            out = search_gh.search_activity("u", "2026-11-01", "2026-11-17", warnings)
+        assert out["reviewed_prs"] == [] and any("could not verify" in w for w in warnings)
+
+    def test_candidate_cap_warns(self):
+        rows = [_spr(n, author="peer", updated=f"2026-11-{(n % 28) + 1:02d}T00:00:00Z") for n in range(150)]
+        def fake_search(kind, flags, fields):
+            return rows if "--reviewed-by" in flags else []
+        warnings = []
+        with patch("search_gh.gh_search", side_effect=fake_search), \
+             patch("search_gh.gh_pr_activity", return_value={"reviews": [], "comments": []}) as act:
+            search_gh.search_activity("u", "2026-11-01", "2026-11-17", warnings)
+        assert act.call_count == search_gh.MAX_VERIFY
+        assert any("only the" in w for w in warnings)
+
+
+class TestGhPrActivity:
+    def test_success(self):
+        with patch("search_gh.subprocess.run", return_value=_make_completed({"reviews": [], "comments": []})):
+            assert search_gh.gh_pr_activity("o/r", 1) == {"reviews": [], "comments": []}
+
+    def test_failure(self):
+        with patch("search_gh.subprocess.run", return_value=MagicMock(returncode=1, stdout="", stderr="x")):
+            assert search_gh.gh_pr_activity("o/r", 1) is None
+
+
+class TestGhMainWithSearch:
+    def test_merges_search_into_output_and_summary(self, capsys):
+        searched = {
+            "authored_prs": [{"repo": "org/priv", "number": 1, "merged_in_window": True, "created": "2026-11-02"}],
+            "reviewed_prs": [{"repo": "org/other", "number": 2}],
+            "commented_prs": [],
+            "commits": [{"repo": "org/priv", "sha": "aaaaaaaa", "date": "2026-11-02", "message": "m", "url": "u"}],
+        }
+        events = [{"type": "PushEvent", "created_at": "2026-11-02T00:00:00Z", "repo": {"name": "org/pub"},
+                   "payload": {"ref": "refs/heads/m", "commits": [
+                       {"sha": "aaaaaaaa11", "message": "m"}, {"sha": "bbbbbbbb11", "message": "n"}]}}]
+        argv = ["search_gh.py", "--github-user", "u", "--since", "2026-11-01", "--until", "2026-11-17"]
+        with patch("search_gh.gh_events", return_value=events), \
+             patch("search_gh.search_activity", return_value=searched):
+            result = _run_main(search_gh, argv, capsys=capsys)
+        assert result["summary"]["commits"] == 2  # aaaaaaaa de-duplicated across both sources
+        assert result["summary"]["authored_prs"] == 1
+        assert result["summary"]["authored_prs_merged_in_window"] == 1
+        assert result["summary"]["reviewed_prs"] == 1
+        assert result["summary"]["repos_touched"] == ["org/other", "org/priv", "org/pub"]
+        assert result["warnings"] == []
