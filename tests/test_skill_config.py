@@ -78,6 +78,61 @@ class TestLoad:
         assert sc.DEFAULTS['attendees']['ignore_emails'] == []
 
 
+class TestIncidents:
+    def _load(self, tmp_path, text):
+        f = tmp_path / 'c.yaml'
+        f.write_text(text)
+        return sc.load_config(f)['incidents']
+
+    def test_defaults(self, tmp_path):
+        inc = sc.load_config(tmp_path / 'nope.yaml')['incidents']
+        assert inc == {'enabled': True, 'roles': ['Owner', 'Incident Commander'],
+                       'stale_update_hours': 24}
+
+    def test_example_values(self):
+        data = sc.parse_simple_yaml(EXAMPLE)['incidents']
+        assert data == {'enabled': True, 'roles': ['Owner', 'Incident Commander'],
+                        'stale_update_hours': 24}
+
+    def test_user_values_override(self, tmp_path):
+        inc = self._load(tmp_path, 'incidents:\n  enabled: false\n  roles: [Owner]\n'
+                                   '  stale_update_hours: 8\n')
+        assert inc == {'enabled': False, 'roles': ['Owner'], 'stale_update_hours': 8}
+
+    def test_partial_override_keeps_other_defaults(self, tmp_path):
+        inc = self._load(tmp_path, 'incidents:\n  stale_update_hours: 12\n')
+        assert inc['roles'] == ['Owner', 'Incident Commander'] and inc['enabled'] is True
+
+    def test_string_role_becomes_list(self, tmp_path):
+        assert self._load(tmp_path, 'incidents:\n  roles: Owner\n')['roles'] == ['Owner']
+
+    @pytest.mark.parametrize('text,key', [
+        ('incidents:\n  enabled: yes please\n', 'enabled'),
+        ('incidents:\n  roles: []\n', 'roles'),
+        ('incidents:\n  stale_update_hours: 0\n', 'stale_update_hours'),
+        ('incidents:\n  stale_update_hours: soon\n', 'stale_update_hours'),
+        ('incidents:\n  stale_update_hours: true\n', 'stale_update_hours'),
+    ])
+    def test_bad_values_warn_and_default(self, tmp_path, capsys, text, key):
+        inc = self._load(tmp_path, text)
+        assert inc[key] == sc.DEFAULTS['incidents'][key]
+        assert f'incidents.{key}' in capsys.readouterr().err
+
+    def test_non_mapping_uses_defaults(self, tmp_path, capsys):
+        assert self._load(tmp_path, 'incidents: off-ish\n') == sc.DEFAULTS['incidents']
+        assert '"incidents" must be a mapping' in capsys.readouterr().err
+
+    def test_defaults_not_mutated(self, tmp_path):
+        self._load(tmp_path, 'incidents:\n  roles: [Owner]\n')
+        assert sc.DEFAULTS['incidents']['roles'] == ['Owner', 'Incident Commander']
+
+
+def test_default_template_has_incidents_section_before_meetings():
+    tpl = (Path(__file__).parent.parent / 'skills' / 'obsidian-vault-setup' / 'defaults'
+           / 'templates' / 'Daily Note Template.md').read_text()
+    assert tpl.index('# ⚠️ Needs Attention') < tpl.index('# 🚨 Incidents') < tpl.index('# 📅 Meetings')
+
+
 class TestAttendeeFilter:
     def _filter(self, tmp_path):
         f = tmp_path / 'c.yaml'

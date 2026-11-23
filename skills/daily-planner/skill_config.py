@@ -19,6 +19,12 @@ Supported keys:
         - infra-compute@example.com
       ignore_patterns:      # regular expressions, searched case-insensitively
         - '@group\\.calendar\\.google\\.com$'
+    incidents:
+      enabled: true         # include the incident.io "# 🚨 Incidents" section
+      roles:                # incident role names that make an incident "mine"
+        - Owner
+        - Incident Commander
+      stale_update_hours: 24  # active incident with no human status update for this long
 
 PyYAML is used when importable. Otherwise a small built-in parser handles the subset
 above (nested mappings, ``- item`` lists, inline ``[a, b]`` lists, quoted strings,
@@ -39,6 +45,11 @@ DEFAULTS: Dict[str, Any] = {
     'attendees': {
         'ignore_emails': [],
         'ignore_patterns': [],
+    },
+    'incidents': {
+        'enabled': True,
+        'roles': ['Owner', 'Incident Commander'],
+        'stale_update_hours': 24,
     },
 }
 
@@ -206,7 +217,36 @@ def load_config(path: Optional[Path] = None) -> Dict[str, Any]:
                 print(f'⚠️  Config {p}: attendees.{key} must be a list; ignoring', file=sys.stderr)
                 val = []
             att[key] = [str(v) for v in val if v is not None]
+    _validate_incidents(cfg, p)
     return cfg
+
+
+def _validate_incidents(cfg: Dict[str, Any], p: Path) -> None:
+    default = DEFAULTS['incidents']
+    inc = cfg.get('incidents')
+    if not isinstance(inc, dict):
+        print(f'⚠️  Config {p}: "incidents" must be a mapping; using defaults', file=sys.stderr)
+        cfg['incidents'] = copy.deepcopy(default)
+        return
+    if not isinstance(inc.get('enabled'), bool):
+        print(f'⚠️  Config {p}: incidents.enabled must be true or false; using default',
+              file=sys.stderr)
+        inc['enabled'] = default['enabled']
+    roles = inc.get('roles')
+    if isinstance(roles, str):
+        roles = [roles]
+    roles = [str(r).strip() for r in roles if r is not None and str(r).strip()] \
+        if isinstance(roles, list) else None
+    if not roles:
+        print(f'⚠️  Config {p}: incidents.roles must be a non-empty list; using default',
+              file=sys.stderr)
+        roles = list(default['roles'])
+    inc['roles'] = roles
+    hours = inc.get('stale_update_hours')
+    if isinstance(hours, bool) or not isinstance(hours, int) or hours <= 0:
+        print(f'⚠️  Config {p}: incidents.stale_update_hours must be a positive integer; '
+              f'using default', file=sys.stderr)
+        inc['stale_update_hours'] = default['stale_update_hours']
 
 
 class AttendeeFilter:
