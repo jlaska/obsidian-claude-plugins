@@ -1,6 +1,6 @@
 ---
 name: daily-planner
-description: Create daily agenda from Google Calendar - generates daily note and meeting files with enriched calendar data (gmeet links, descriptions, attachments)
+description: Create daily agenda from Google Calendar - generates daily note and meeting files with enriched calendar data (gmeet links, descriptions, attachments), plus open incident.io incidents needing your action
 allowed-tools:
   - Read
   - Glob
@@ -23,6 +23,7 @@ Invoke `/daily-planner` at the start of your day to:
 - Match calendar attendees to People notes
 - Link all meetings from the daily note
 - Generate a Meeting Preparation section with previous meeting summaries and suggested topics
+- List open incident.io incidents where you're Owner or Incident Commander and need to act
 
 ## Workflow
 
@@ -214,6 +215,110 @@ Read `$DAILY_NOTE` and check whether `# ⚠️ Needs Attention` already exists.
 - **Section missing** (common — daily notes created before template update won't have it): Use the `Edit` tool on `$DAILY_NOTE` to insert the full section — heading, callout blocks, and a blank line — immediately **before** the `# 📅 Meetings` line. Set `old_string` to `# 📅 Meetings` and `new_string` to the new section text followed by `# 📅 Meetings`.
 - **Section exists**: Use the `Edit` tool on `$DAILY_NOTE` to replace everything from `# ⚠️ Needs Attention` up to (but not including) the next `#` heading with the regenerated section. No user content to preserve — fully regenerated each run.
 
+### 7. Incidents
+
+Surface open incident.io incidents that need your action, in a `# 🚨 Incidents` section. This step uses the incident.io MCP connector (`mcp__claude_ai_incident_io__*`), which acts as you, so no API key is involved.
+
+Read the settings first: `python3 "$SKILL_BASE/skill_config.py"` prints the effective config. Use `incidents.enabled`, `incidents.roles` and `incidents.stale_update_hours`. If `enabled` is false, skip this step entirely and leave the daily note alone.
+
+Get the current UTC time with `date -u +%Y-%m-%dT%H:%M:%SZ` for the staleness check.
+
+**The outcome of this step is exactly one of three things. Never confuse them:**
+
+| Outcome | When | Daily note | Run report |
+|---|---|---|---|
+| `actions` | Every required call succeeded and at least one item qualifies | Write the section | "incident.io: N incidents need your action" |
+| `none` | Every required call succeeded and nothing qualifies | Remove the section | "incident.io: no incidents need your action (checked N open incidents)" |
+| `error` | Tools missing, auth failed, or a list call failed | Write the section with a failure callout | "incident.io check FAILED: {reason}" plus the fix |
+
+Report `none` only when you actually got answers back from `identity_show`, `incident_list`, `follow_up_list` and `action_list`. An empty list is `none`; an error, a refusal or a missing tool is `error`.
+
+#### 7a. Load the tools and identify yourself
+
+Load the deferred tools:
+
+```
+ToolSearch("select:mcp__claude_ai_incident_io__identity_show,mcp__claude_ai_incident_io__incident_list,mcp__claude_ai_incident_io__incident_show,mcp__claude_ai_incident_io__postmortem_list,mcp__claude_ai_incident_io__follow_up_list,mcp__claude_ai_incident_io__action_list")
+```
+
+If the tools are not found, the outcome is `error` with reason "incident.io connector not connected". Fix: connect incident.io in claude.ai connector settings (or `/mcp`).
+
+Call `identity_show`. Keep the user ID: `follow_up_list` and `action_list` need it, because they don't accept "me". If the call fails, or `access_level` is `none`, the outcome is `error` (reason: the error text, or "connection has no access"). Fix: reconnect the incident.io connector.
+
+#### 7b. Gather candidates
+
+1. **My incidents:**
+
+   ```
+   incident_list(assigned_to=["me"], status_category=["triage","active","paused","post-incident"],
+                 include=["roles","summary"], page_size=50)
+   ```
+
+   Page with `after` = `next_cursor` until `has_more` is false. Keep an incident only if one of its `roles` has your user ID and a role name matching `incidents.roles` (case-insensitive). `assigned_to` also matches plain participants, so this filter is required. Record your role(s), the Incident Commander's name (if not you), severity, status name and category, permalink and `chat_channel_url`.
+
+2. **Per incident, by status category:**
+   - **triage, active or paused:** call `incident_show(id=<reference>)`. Among its `updates`, find the newest one whose `author.type` is `user` (skip `integration` authors such as `incident_lifecycle`). If none of the returned updates is user-authored, call again with `include=["updates"]`. If there is no human update at all, measure from `reported_at`. If the age is at least `stale_update_hours`, the item is **Stale status update** (show the age in hours and the last author). Otherwise it is **Drive to resolution**: give a one-line, specific next step taken from the incident summary or the latest update.
+   - **post-incident:** call `postmortem_list(incident_id=<reference>)`.
+     - No documents, or only `state: failed` → **Create postmortem**.
+     - Main document (`is_main`, else the first) with `status` not `Completed` → **Finish postmortem** (or **Review postmortem** when the status is `In review`). Link the document `url`.
+     - External document without a status → **Check postmortem status** with its link.
+     - Postmortem `Completed` → no postmortem item. The incident still appears if it has follow-ups or actions for you; otherwise **Close out the incident** (it is still in post-incident with your role).
+
+3. **My follow-ups and actions** (on any incident, including closed ones and ones where you hold no role):
+
+   ```
+   follow_up_list(assignee_id=<my user id>, status=["outstanding"], page_size=50)
+   action_list(assignee_id=<my user id>, status=["outstanding"], page_size=50)
+   ```
+
+   Page both until `has_more` is false. Attach each item to its incident if that incident is in the list from step 1. Put the rest under **Other incidents**, by incident reference.
+
+**Partial failures:** if `incident_list`, `follow_up_list` or `action_list` fails, the outcome is `error`. If only a per-incident call (`incident_show` or `postmortem_list`) fails, still list that incident, with the line `→ ⚠️ Could not check {updates|postmortem}: {reason}`, and mention it in the run report.
+
+#### 7c. Write the section
+
+Read `$DAILY_NOTE`. Order the incidents: triage, active and paused first, then post-incident. Within each group put the most severe first (Critical, then Major, Minor, Informative), then the most recently updated. **Other incidents** comes last.
+
+Use one callout per incident: `[!danger]` for triage, active or paused, and `[!warning]` for post-incident. Leave them expanded (no `-`).
+
+```markdown
+# 🚨 Incidents
+
+> [!danger] [INC-992](https://app.incident.io/…/incidents/992) ~80 unhealthy projects on use1 v3
+> Major · Monitoring · **Owner** (IC: Artyom Borissov) · [Slack](<chat_channel_url>)
+> - Last status update 27h ago (Jess Fink) → **Post a status update**
+> - Follow-up: Add disk-read latency alert (High) → **Complete or reassign**
+
+> [!warning] [INC-978](https://app.incident.io/…/incidents/978) database queue depth at 25,000
+> Minor · Reviewing · **Owner** (IC: Rob Shields III)
+> - Postmortem "In progress" → **[Finish postmortem](<postmortem url>)**
+
+> [!note] Other incidents
+> - [INC-943](<permalink>) Follow-up: Update runbook for EC2 status-check failures → **Complete or reassign**
+
+---
+
+```
+
+For an `error` outcome, write only this in the section:
+
+```markdown
+# 🚨 Incidents
+
+> [!failure] incident.io check failed
+> <reason>. Incidents needing your action are unknown, not zero.
+> Fix: <reconnect the incident.io connector | retry later>
+
+---
+
+```
+
+**Section management** (the section always ends with a `---` line):
+
+- **Outcome `none`**: if `# 🚨 Incidents` exists, use `Edit` to remove everything from `# 🚨 Incidents` up to (but not including) the next `#` heading. Otherwise leave the note alone.
+- **Outcome `actions` or `error`, section missing**: use `Edit` to insert the section immediately **before** the `# 📅 Meetings` line (`old_string` `# 📅 Meetings`, `new_string` the section followed by `# 📅 Meetings`). This places it after Needs Attention when that exists.
+- **Outcome `actions` or `error`, section exists**: use `Edit` to replace everything from `# 🚨 Incidents` up to (but not including) the next `#` heading. There is no user content to preserve, because the section is regenerated on every run.
+
 ---
 
 ## Configuration
@@ -224,6 +329,9 @@ Company- and person-specific settings live in a user config file, not in the ski
 Supported keys:
 - `attendees.ignore_emails`: exact addresses (case-insensitive) never hydrated as meeting attendees, such as group mailing lists.
 - `attendees.ignore_patterns`: case-insensitive regular expressions matched against the attendee address, such as Google calendar group and resource addresses.
+- `incidents.enabled` (default `true`): run Step 7 and maintain the `# 🚨 Incidents` section.
+- `incidents.roles` (default `[Owner, Incident Commander]`): incident role names (case-insensitive) that make an incident yours.
+- `incidents.stale_update_hours` (default `24`): an active incident with no human status update for this many hours is flagged **Stale status update**.
 
 ## Script Reference
 
@@ -239,7 +347,7 @@ Supported keys:
 | `write_notion_section.py` | Insert/replace `## Notes from Notion` from a ready-made markdown file (manual use) | `--meeting-file`, `--content-file` | Meeting file updated |
 | `gather_meeting_context.py` | Vault introspection for AI prep | `--vault-root`, `--self-json` | JSON: flat array of meetings, each with `is_first_run` |
 | `discover_jira_actions.py` | **Unused** (Supabase uses Linear; Step 6 uses the Linear MCP tools) | `--self-json`, `--projects`, `--stale-days` | JSON: stale assigned + stale created issues |
-| `skill_config.py` | User config loader (library): attendee ignore lists | `~/.config/obsidian-productivity/daily-planner/config.yaml` | Config dict; run directly to print the effective config |
+| `skill_config.py` | User config loader (library): attendee ignore lists, incident settings | `~/.config/obsidian-productivity/daily-planner/config.yaml` | Config dict; run directly to print the effective config |
 | `vault_utils.py` | Shared utilities (library) | — imported by other scripts | — |
 
 All scripts support `--help` for usage details.

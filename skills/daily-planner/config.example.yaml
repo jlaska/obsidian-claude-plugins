@@ -12,3 +12,13 @@ attendees:
     - '@group\.calendar\.google\.com$'
     - '@resource\.calendar\.google\.com$'
     - '@import\.calendar\.google\.com$'
+
+incidents:
+  # Add the "# 🚨 Incidents" section (open incident.io incidents needing your action).
+  enabled: true
+  # Incident role names (case-insensitive) that make an incident yours.
+  roles:
+    - Owner
+    - Incident Commander
+  # An active incident with no human status update for this many hours is flagged stale.
+  stale_update_hours: 24
