@@ -15,11 +15,14 @@ from typing import Dict, List, Optional
 
 
 def sanitize_title(title: str) -> str:
-    """Sanitize meeting title for use as a filesystem filename."""
+    """Sanitize meeting title for use as a filesystem and wikilink-safe filename."""
     title = title.replace('/', ' - ')
     title = title.replace(':', ' - ')
     title = title.replace('|', ' - ')
     title = re.sub(r'[<>"\\|?*]', '', title)
+    # '#', '^', '[' and ']' are legal in filenames but break Obsidian wikilinks
+    # ([[note #x]] is parsed as note + heading anchor), so drop them.
+    title = re.sub(r'[#^\[\]]', '', title)
     title = re.sub(r'\s+', ' ', title)
     return title.strip()
 
